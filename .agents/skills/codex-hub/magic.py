@@ -1,0 +1,595 @@
+#!/usr/bin/env python3
+# 허브 마법봉 요청 처리 — main-magic · insp-magic · 2nd-magic 공용 · 표준 라이브러리만
+"""
+요청 = devview 가 마법봉을 누른 순간 쓴 <작업 폴더>/.codex-hub/requests/<요청id>.json(보기 · 고른 노드 · 파일 · 줄 · 글자 · 질문)
+  python3 ~/.codex/skills/codex-hub/magic.py show 요청id                고른 대상 · 할 일 · 답 자리(상태 줄은 여기서 바꿈 · 2ND 질문 노드는 답변 준비 중으로)
+  python3 ~/.codex/skills/codex-hub/magic.py answer-node 요청id --short '결론(60자)' '본문'
+  python3 ~/.codex/skills/codex-hub/magic.py answer-md 요청id '답'     md · txt — 고른 것 없음 = 맨 위 «🤖 질문 · 답변» 절 · 고른 글자 = 그 문단 아래 · 표 = 고른 행 아래 새 행
+  python3 ~/.codex/skills/codex-hub/magic.py answer-code 요청id '답'   코드 — 고른 줄 아래 주석 · 고른 줄 없음 = 파일 맨 위(실행 · 인코딩 줄 아래)
+  python3 ~/.codex/skills/codex-hub/magic.py answer-form 요청id '답'   CSV · PDF · 그 밖 — 설명 폼(저장소 밖 /tmp/sv · devview 설문 탭)
+  python3 ~/.codex/skills/codex-hub/magic.py answer-note 요청id '답'   책 스티커 — 그 스티커 answer 칸(bookkit/notes.py answer)
+출력: 성공 한 줄(show 는 몇 줄) · 실패 «실패: 원인» + 종료코드 1
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import subprocess
+import sys
+import tempfile
+import time
+from pathlib import Path
+
+# 이 파일 폴더 — hub.py(작업 폴더 찾기 · 상태 줄) 와 같은 곳
+HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE))
+import hub  # noqa: E402
+
+# 요청 id 모양
+RID_RE = re.compile(r"^m[0-9]{4}-[0-9]{6}-[0-9a-f]{4}$")
+# 맨 위 질문 · 답변 절 제목
+TOP_HEAD = "## 🤖 질문 · 답변"
+# 확장자 → 주석 기호(한 줄 앞 기호 · 또는 (여는, 닫는) 짝)
+COMMENT = {}
+for _e in ("py", "pyi", "sh", "bash", "zsh", "rb", "pl", "r", "yaml", "yml", "toml", "ini", "cfg", "conf", "dockerfile",
+           "makefile", "ps1"):
+    COMMENT[_e] = "#"
+for _e in ("js", "mjs", "cjs", "jsx", "ts", "tsx", "java", "kt", "kts", "c", "h", "cpp", "hpp", "cc", "cs", "go", "rs",
+           "swift", "scala", "dart", "php", "scss", "less"):
+    COMMENT[_e] = "//"
+for _e in ("sql", "lua", "hs"):
+    COMMENT[_e] = "--"
+for _e in ("html", "htm", "xml", "vue", "svelte"):
+    COMMENT[_e] = ("<!--", "-->")
+COMMENT["css"] = ("/*", "*/")
+COMMENT["bat"] = COMMENT["cmd"] = "REM"
+# 설명 폼 저장 폴더 기본값(2ND 는 저장소에 설문을 남기지 않음 — 2nd 스킬 규칙) · 시험은 MAGIC_SURVEY_DIR
+FORM_DIR = "/tmp/sv"
+# 보여 줄 고른 글자 최대 길이
+SHOW_TEXT = 600
+
+
+# 거부 · 실패 — 원인 한 줄
+class MagicError(Exception):
+    pass
+
+
+# 요청 읽기 — 반환 (요청 사전, 요청 파일 경로)
+# rid: 요청 id
+def load_request(rid):
+    if not RID_RE.match(rid or ""):
+        raise MagicError(f"요청 id 형식 오류 «{rid}» — m월일-시분초-4자리")
+    # 요청 파일
+    p = hub.hub_dir() / "requests" / f"{rid}.json"
+    req = hub.read_json(p)
+    if not isinstance(req, dict):
+        raise MagicError(f"요청 파일 없음: {p}")
+    return req, p
+
+
+# flowtree 불러오기 — 요청의 flowtree 폴더 → 작업 폴더/devview/flowtree · 반환 (flowtree_store, flowtree 명령 모듈, tree.json 경로)
+# req: 요청
+def flowtree(req):
+    # 후보 폴더
+    cands = [Path(req["flowtree"])] if req.get("flowtree") else []
+    cands.append(Path(req.get("root") or os.getcwd()) / "devview" / "flowtree")
+    for d in cands:
+        if (d / "flowtree_store.py").is_file():
+            sys.path.insert(0, str(d))
+            import flowtree as ftcli  # noqa: E402
+            import flowtree_store as store  # noqa: E402
+            # 그래프 파일
+            tp = Path(req.get("tree") or Path(req.get("root") or os.getcwd()) / "docs" / "flowtree" / "tree.json")
+            if not tp.is_file():
+                raise MagicError(f"그래프 파일 없음: {tp}")
+            return store, ftcli, tp
+    raise MagicError("flowtree 없음(devview/flowtree)")
+
+
+# 상태 줄 바꾸기 — 등록이 없으면 조용히 넘어감(답 일은 계속)
+# text: 상태 줄
+def set_status(text):
+    try:
+        # 허브 폴더 · 자기 등록
+        h = hub.hub_dir()
+        nick, data = hub.find_me(h)
+        data["status"] = hub.one_line(text[:120], "상태 줄")
+        data["status_at"] = hub.now_text()
+        hub.write_json(hub.session_path(h, nick), data)
+    except (hub.HubError, OSError):
+        pass
+
+
+# 한 줄로 줄이기
+# s: 글 / n: 최대 글자
+def short(s, n=60):
+    # 한 줄 글
+    t = " ".join(str(s or "").split())
+    return t if len(t) <= n else t[:n - 1] + "…"
+
+
+# 대상 파일 실제 경로 — 요청의 abs(덧붙인 폴더 포함) → 작업 폴더 기준
+# req: 요청
+def target_path(req):
+    # 답 자리
+    t = req.get("target") or {}
+    if t.get("abs") and Path(t["abs"]).is_file():
+        return Path(t["abs"])
+    # 작업 폴더 기준 경로
+    p = Path(req.get("root") or os.getcwd()) / str(t.get("file") or "")
+    if not p.is_file():
+        raise MagicError(f"파일 없음: {t.get('file')}")
+    return p
+
+
+# ======= show =======
+# main — 고른 노드 중 hand_off 작업 노드 · 나머지는 맥락
+# req: 요청 / out: 출력 줄 목록
+def show_main(req, out):
+    store, ftcli, tp = flowtree(req)
+    # 그래프 · id → 노드 · 옮긴 원본(옛 promote 기록 — 명령이 빠진 판이면 빈 사전) · 지금 초
+    tree = store.read_json(tp, {}) or {}
+    nodes = store.node_map(tree)
+    moved = getattr(store, "promoted_map", lambda t: {})(tree)
+    now = time.time()
+    # 고른 id 목록
+    ids = [x["id"] for x in req.get("nodes") or []]
+    # hand_off 작업 노드(옛 이름 adr 도 받음)
+    work = [i for i in ids if i in nodes and nodes[i].get("kind") == "task" and store.graph_of(nodes, nodes[i]) in ("adr", "hand_off")
+            and i not in moved]
+    for i in ids:
+        if i in work:
+            out.extend(ftcli.show_lines(tree, i, now))
+        elif i in nodes:
+            out.append("맥락: " + ftcli.node_line(nodes[i], nodes, now) + (f" — {nodes[i]['summary']}" if nodes[i].get("summary") else ""))
+        else:
+            out.append(f"맥락: {i}")
+    if not work:
+        out.append("멈춤: 고른 노드에 hand_off 작업 노드 없음 — 노드를 만들지 말고 유저에게 무엇을 할지 묻고 턴을 끝낸다")
+        set_status("확인 : 마법봉 — hand_off 작업 노드 없음 · 유저 확인 대기")
+        return
+    out.append(f"할 일: {' · '.join(work)} — 하나씩 python3 devview/flowtree/flowtree.py --role main start <id> → 내 서브에게 구현을 시킨다"
+               " → 서브 커밋을 확인하고 done <id>")
+    # 첫 작업 노드 · 그 hand_off 절 번호(연결 문서 앵커)
+    n = nodes[work[0]]
+    anchor = str((n.get("doc") or {}).get("anchor") or "") if isinstance(n.get("doc"), dict) else ""
+    set_status(f"❇️_{anchor} : 작업. {short(n.get('title'), 40)}" if re.match(r"^\d+(-\d+)*$", anchor) else f"작업 : {short(n.get('title'), 40)}")
+
+
+# insp — 고른 노드 중 검증 노드만(devview 가 이미 거름 · 한 번 더)
+# req: 요청 / out: 출력 줄 목록
+def show_insp(req, out):
+    store, ftcli, tp = flowtree(req)
+    # 그래프 · id → 노드 · 지금 초
+    tree = store.read_json(tp, {}) or {}
+    nodes = store.node_map(tree)
+    now = time.time()
+    # 검증 노드 id 목록
+    ver = [x["id"] for x in req.get("nodes") or [] if nodes.get(x["id"], {}).get("kind") == "verify"]
+    if not ver:
+        out.append("검증 노드 없음 — 할 일 없음")
+        return
+    for v in ver:
+        out.extend(ftcli.show_lines(tree, v, now))
+    out.append("할 일: 검증 노드마다 python3 devview/flowtree/flowtree.py --role insp verify-start <id> → 복제 서브에게 검증을 시킨다 → "
+               "재현 스크립트를 한 번 다시 돌려 확인 → run <id> pass|fail '근거(커밋 · 시험 명령)' · 섹션 검증이 끝나면 hub.py log 한 줄")
+    set_status(f"확인 : 검증 {' · '.join(ver)[:60]}")
+
+
+# 2nd — 질문 · 대상 · 답 자리
+# req: 요청 / out: 출력 줄 목록 / rid: 요청 id
+def show_2nd(req, out, rid):
+    # 답 자리
+    t = req.get("target") or {}
+    kind = t.get("kind")
+    out.append(f"질문: {req.get('question')}")
+    cmd = f"python3 ~/.codex/skills/codex-hub/magic.py"
+    if kind == "node":
+        store, ftcli, tp = flowtree(req)
+        # 질문 id · 그래프 · id → 노드 · 지금 초
+        q = t.get("question")
+        tree = store.read_json(tp, {}) or {}
+        nodes = store.node_map(tree)
+        now = time.time()
+        if q not in nodes:
+            raise MagicError(f"질문 노드 없음: {q}")
+        if store.status(nodes[q], nodes, now)["status"] == "todo":
+            store.apply(tp, "2nd", "answer-start", question=q)
+            out.append(f"{q} 답변 준비 중")
+        for x in t.get("targets") or []:
+            out.append(ftcli.ctx_line(x, nodes, now))
+        if not t.get("targets"):
+            out.append("  (섬 질문 — 대상 노드 없음)")
+        if t.get("commit") or t.get("git_file"):
+            out.append(f"Git: 커밋 {t.get('commit') or '-'} «{short(t.get('subject'), 50)}» · 파일 {t.get('git_file') or '-'}"
+                       f" — git show {t.get('commit') or 'HEAD'}{' -- ' + t['git_file'] if t.get('git_file') else ''}")
+        out.append(f"답 자리: node {q} → {cmd} answer-node {rid} --short '결론(60자)' '본문(근거 파일 · 줄)'")
+    elif kind in ("md", "code", "form"):
+        # 고른 범위 · 글자
+        r = t.get("range") or {}
+        text = str(t.get("text") or "")
+        where = f"줄 {r.get('start_line')}–{r.get('end_line')}" if r.get("start_line") else "고른 것 없음(파일 전체)"
+        out.append(f"파일: {t.get('file')} · {where}" + (f" · 표 행 {t['table'].get('line')} 열 {t['table'].get('col')}"
+                                                          if t.get("table") else ""))
+        if text.strip():
+            out.append("고른 글자:\n" + (text if len(text) <= SHOW_TEXT else text[:SHOW_TEXT] + " …(줄임)"))
+        out.append(f"답 자리: {kind} → {cmd} answer-{kind} {rid} '답(근거 파일 · 줄)'")
+    elif kind == "note":
+        # 책 스티커 — 자리(쪽 · 장 · 절 · 글) · 블록 ID(= 장-칸 이름 · 장-항목 id → content 칸 · contracts 의 같은 id)
+        out.append(f"책: {t.get('book')} · 문서 {t.get('doc') or '-'} · 스티커 {t.get('note')} · notes {t.get('notes_file')}")
+        out.append(f"자리: {t.get('ctx') or '-'}")
+        if t.get("block"):
+            out.append(f"블록 {t['block']} — 책 폴더 content/ 의 그 칸 · contracts/*.json 의 같은 id 를 읽는다(bookkit/README «판 · 블록 ID»)")
+        out.append(f"답 자리: note → {cmd} answer-note {rid} '답(근거 칸 · 계약 id)'")
+    else:
+        raise MagicError(f"답 자리 모름: {kind}")
+    set_status(f"답변 : {short(req.get('question'), 50)}")
+
+
+# show — 요청 내용 · 할 일
+# rid: 요청 id
+def cmd_show(rid):
+    req, _ = load_request(rid)
+    # 출력 줄
+    out = [f"요청 {rid} · {req.get('skill')} · 보기 {req.get('view') or '-'} · {req.get('at')}"]
+    role = req.get("role")
+    if role == "main":
+        show_main(req, out)
+    elif role == "insp":
+        show_insp(req, out)
+    elif role == "2nd":
+        show_2nd(req, out, rid)
+    else:
+        raise MagicError(f"역할 모름: {role}")
+    return "\n".join(out)
+
+
+# ======= 파일 읽기 · 쓰기(인코딩 · 줄바꿈 유지) =======
+# 파일 → (줄 목록, 인코딩, 줄바꿈, 끝 줄바꿈 여부)
+# path: 파일
+def read_lines(path):
+    # 원본 바이트
+    raw = path.read_bytes()
+    enc = "utf-8"
+    if raw.startswith(b"\xef\xbb\xbf"):
+        enc, raw = "utf-8-sig", raw[3:]
+    try:
+        text = raw.decode("utf-8")
+    except UnicodeDecodeError:
+        enc, text = "cp949", raw.decode("cp949")
+    eol = "\r\n" if "\r\n" in text else "\n"
+    text = text.replace("\r\n", "\n")
+    end_nl = text.endswith("\n")
+    if end_nl:
+        text = text[:-1]
+    return (text.split("\n") if text else []), enc, eol, end_nl
+
+
+# 줄 목록 → 파일(같은 인코딩 · 줄바꿈 · 임시 파일 교체)
+# path: 파일 / lines: 줄 목록 / enc: 인코딩 / eol: 줄바꿈 / end_nl: 끝 줄바꿈
+def write_lines(path, lines, enc, eol, end_nl):
+    # 쓸 글
+    text = eol.join(lines) + (eol if end_nl or not lines else "")
+    data = (b"\xef\xbb\xbf" if enc == "utf-8-sig" else b"") + text.encode("utf-8" if enc == "utf-8-sig" else enc)
+    # 임시 파일
+    tmp = path.with_name(f".{path.name}.{os.getpid()}.magic")
+    tmp.write_bytes(data)
+    try:
+        os.chmod(tmp, path.stat().st_mode & 0o7777)
+    except OSError:
+        pass
+    os.replace(tmp, path)
+
+
+# 고른 글자의 지금 위치 — 기록한 줄에 그 글자가 그대로면 그 줄 · 아니면 문서에서 찾은 첫 자리 · 못 찾으면 기록한 줄(범위 안으로)
+# lines: 줄 목록 / r: 기록 범위 / text: 고른 글자 → (시작 번호, 끝 번호) 0부터
+def locate(lines, r, text):
+    # 기록한 시작 · 끝(0부터)
+    s = max(0, int(r.get("start_line") or 1) - 1)
+    e = max(s, int(r.get("end_line") or (s + 1)) - 1)
+    # 고른 글자의 첫 줄 · 줄 수
+    first = (text or "").strip("\n").split("\n")[0].strip()
+    span = max(0, (text or "").strip("\n").count("\n"))
+    if first:
+        if s < len(lines) and first in lines[s]:
+            return s, min(len(lines) - 1, s + span) if lines else 0
+        for i, ln in enumerate(lines):
+            if first in ln:
+                return i, min(len(lines) - 1, i + span)
+    if not lines:
+        return 0, -1
+    s = min(s, len(lines) - 1)
+    return s, min(max(s, e), len(lines) - 1)
+
+
+# ======= answer-md =======
+# 표 행 칸 나누기(앞뒤 | · \| 는 글자)
+# row: 표 행 글
+def split_row(row):
+    # 앞뒤 공백 · 바깥 | 뺀 글
+    s = row.strip()
+    if s.startswith("|"):
+        s = s[1:]
+    if s.endswith("|") and not s.endswith("\\|"):
+        s = s[:-1]
+    return [c.strip() for c in re.split(r"(?<!\\)\|", s)]
+
+
+# 표 행인가(구분 줄 제외)
+# line: 줄
+def is_table_row(line):
+    # 앞뒤 공백 뺀 줄
+    s = line.strip()
+    return s.startswith("|") and not re.fullmatch(r"\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?", s)
+
+
+# 콜아웃 줄 — «> [!answer] 🤖 2ND · 질문» + 답 줄
+# q: 질문 / a: 답
+def callout(q, a):
+    return [f"> [!answer] 🤖 2ND · {short(q, 200)}"] + [f"> {x}" if x.strip() else ">" for x in a.strip("\n").split("\n")]
+
+
+# md · txt 에 답 넣기 — 반환 (경로, 넣은 줄 번호 1부터)
+# req: 요청 / ans: 답
+def answer_md(req, ans):
+    # 대상 · 경로 · 질문
+    t = req.get("target") or {}
+    path = target_path(req)
+    q = req.get("question") or ""
+    lines, enc, eol, end_nl = read_lines(path)
+    r = t.get("range") or {}
+    text = str(t.get("text") or "")
+    tb = t.get("table") if isinstance(t.get("table"), dict) else None
+    at = None
+    if tb and lines:
+        # 표 행 — 기록한 줄 · 고른 글자로 다시 찾기
+        s, _ = locate(lines, {"start_line": tb.get("line"), "end_line": tb.get("line")}, text)
+        if not is_table_row(lines[s]):
+            # 기록한 줄 근처의 표 행
+            near = [i for i in range(max(0, s - 3), min(len(lines), s + 4)) if is_table_row(lines[i])]
+            s = near[0] if near else None
+        if s is not None:
+            # 칸 수 · 답 칸 · 새 행
+            cells = split_row(lines[s])
+            col = min(max(0, int(tb.get("col") or 0)), len(cells) - 1)
+            cell = " ".join(ans.split("\n")).replace("|", "\\|").strip()
+            new = ["🤖"] + [""] * (len(cells) - 1)
+            new[col] = f"🤖 {cell}" if col == 0 else cell
+            # 머리줄을 골랐으면 구분 줄(|---|) 아래로 — 머리줄과 구분 줄 사이에 넣으면 표가 깨짐
+            if s + 1 < len(lines) and lines[s + 1].strip().startswith("|") and not is_table_row(lines[s + 1]):
+                s += 1
+            lines.insert(s + 1, "| " + " | ".join(new) + " |")
+            at = s + 2
+    if at is None and r.get("start_line") and text.strip() and lines:
+        # 고른 글자 — 그 글자가 든 문단(코드 울타리 안이면 울타리 끝) 아래
+        _, e = locate(lines, r, text)
+        # 코드 울타리 안인가(앞의 ``` 수가 홀수)
+        fences = sum(1 for x in lines[:e + 1] if x.lstrip().startswith("```"))
+        if fences % 2 == 1:
+            while e + 1 < len(lines) and not lines[e + 1].lstrip().startswith("```"):
+                e += 1
+            e = min(e + 1, len(lines) - 1)
+        else:
+            while e + 1 < len(lines) and lines[e + 1].strip() and not lines[e + 1].lstrip().startswith(("#", "```")):
+                e += 1
+        block = [""] + callout(q, ans) + ([""] if e + 1 < len(lines) and lines[e + 1].strip() else [])
+        lines[e + 1:e + 1] = block
+        at = e + 3
+    if at is None:
+        # 고른 것 없음 — 맨 위 «🤖 질문 · 답변» 절(있으면 그 절 끝에 덧붙임)
+        head = next((i for i, x in enumerate(lines) if x.strip() == TOP_HEAD), None)
+        if head is not None:
+            # 절 끝 — 제목 뒤로 이어진 콜아웃(> 줄 · 사이 빈 줄)의 마지막 줄 다음(그 뒤 문서 본문은 이 절이 아님)
+            last = head
+            for k in range(head + 1, len(lines)):
+                if lines[k].lstrip().startswith(">"):
+                    last = k
+                elif lines[k].strip():
+                    break
+            end = last + 1
+            lines[end:end] = [""] + callout(q, ans)
+            at = end + 2
+        else:
+            # 넣을 자리 — 머리말(--- … ---) 뒤 · 첫 줄이 # 제목이면 그 아래
+            i = 0
+            if lines and lines[0].strip() == "---":
+                close = next((k for k in range(1, len(lines)) if lines[k].strip() == "---"), None)
+                i = close + 1 if close is not None else 0
+            while i < len(lines) and not lines[i].strip():
+                i += 1
+            if i < len(lines) and re.match(r"^#\s", lines[i]):
+                i += 1
+            # 콜아웃 앞 줄 수(빈 줄 · 제목 · 빈 줄)
+            pre = (1 if i > 0 else 0) + 2
+            lines[i:i] = ([""] if i > 0 else []) + [TOP_HEAD, ""] + callout(q, ans) + [""]
+            at = i + pre + 1
+    write_lines(path, lines, enc, eol, end_nl)
+    return path, at
+
+
+# ======= answer-code =======
+# 코드 파일에 주석으로 답 넣기 — 반환 (경로, 넣은 줄 번호 1부터)
+# req: 요청 / ans: 답
+def answer_code(req, ans):
+    # 대상 · 경로 · 질문 · 확장자 · 주석 기호
+    t = req.get("target") or {}
+    path = target_path(req)
+    q = req.get("question") or ""
+    name = path.name.lower()
+    ext = name.rsplit(".", 1)[-1] if "." in name else name
+    mark = COMMENT.get(ext)
+    if mark is None:
+        raise MagicError(f"주석 기호 모름(.{ext}) — answer-form 으로")
+    lines, enc, eol, end_nl = read_lines(path)
+    r = t.get("range") or {}
+    text = str(t.get("text") or "")
+    # 답 줄 — 머리 한 줄 + 답
+    body = [f"🤖 2ND · 질문: {short(q, 200)}"] + [x for x in ans.strip("\n").split("\n")]
+
+    # 주석 한 줄
+    # x: 글 / ind: 들여쓰기
+    def com(x, ind):
+        if isinstance(mark, tuple):
+            return f"{ind}{mark[0]} {x} {mark[1]}"
+        return f"{ind}{mark} {x}".rstrip() if x.strip() else f"{ind}{mark}"
+    if r.get("start_line") and lines:
+        # 고른 줄 아래 — 끝 줄의 들여쓰기에 맞춤
+        _, e = locate(lines, r, text)
+        ind = re.match(r"^\s*", lines[e]).group(0)
+        lines[e + 1:e + 1] = [com(x, ind) for x in body]
+        at = e + 2
+    else:
+        # 맨 위 — 실행 줄(#!) · 인코딩 줄(coding: · PEP 263 은 둘째 줄까지) · <?xml · <!DOCTYPE · <?php 아래
+        i = 0
+        if i < len(lines) and lines[i].startswith("#!"):
+            i += 1
+        while i < min(2, len(lines)) and re.match(r"^[ \t\f]*#.*?coding[:=]", lines[i]):
+            i += 1
+        while i < len(lines) and re.match(r"^\s*(<\?xml|<!DOCTYPE|<\?php)", lines[i], re.I):
+            i += 1
+        lines[i:i] = [com(x, "") for x in body]
+        at = i + 1
+    write_lines(path, lines, enc, eol, end_nl)
+    return path, at
+
+
+# ======= answer-form =======
+# 설명 폼 등록 — survey.py(같은 스킬 폴더의 형제 survey) new · 반환 설문 id
+# req: 요청 / ans: 답 / rid: 요청 id
+def answer_form(req, ans, rid):
+    # 설문 도구
+    sv = HERE.parent / "survey" / "survey.py"
+    if not sv.is_file():
+        raise MagicError(f"설문 도구 없음: {sv}")
+    # 대상
+    t = req.get("target") or {}
+    src = " · ".join(x for x in (str(t.get("file") or ""), short(t.get("text"), 80) if str(t.get("text") or "").strip() else "") if x)
+    spec = {"title": f"🤖 2ND 답 — {short(req.get('question'), 40)}", "intro": f"대상: {src or '-'} · 요청 {rid}",
+            "items": [{"id": "1", "title": short(req.get("question"), 200), "body": ans, "source": src}]}
+    # 질문 파일(임시)
+    fd, tmp = tempfile.mkstemp(prefix=f"magic_{rid}_", suffix=".json")
+    os.close(fd)
+    try:
+        Path(tmp).write_text(json.dumps(spec, ensure_ascii=False), encoding="utf-8")
+        r = subprocess.run([sys.executable, str(sv), "--dir", os.environ.get("MAGIC_SURVEY_DIR") or FORM_DIR, "new", tmp, "--project", "2nd"],
+                           capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
+    finally:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+    if r.returncode != 0:
+        raise MagicError(f"설명 폼 실패 — {(r.stderr or r.stdout).strip()[-200:]}")
+    try:
+        return json.loads(r.stdout.strip().splitlines()[-1])["id"]
+    except (ValueError, KeyError, IndexError):
+        raise MagicError(f"설명 폼 출력 해석 실패 — {r.stdout.strip()[-200:]}") from None
+
+
+# ======= answer-note =======
+# 책 스티커 answer 칸 — bookkit/notes.py answer 재사용(책은 다시 읽을 때 초록 답 칸) · 반환 notes.py 출력 한 줄
+# req: 요청 / ans: 답
+def answer_note(req, ans):
+    # 대상 · 키트 · notes.json 폴더
+    t = req.get("target") or {}
+    root = Path(req.get("root") or os.getcwd())
+    tool = root / "bookkit" / "notes.py"
+    if not tool.is_file():
+        raise MagicError(f"notes.py 없음: {tool}")
+    book = (root / str(t.get("notes_file") or "")).parent
+    if not (book / "notes.json").is_file():
+        raise MagicError(f"notes.json 없음: {book}")
+    # 답 파일(임시 — 줄 바꿈 · 기호 그대로)
+    fd, tmp = tempfile.mkstemp(prefix=f"note_{t.get('note')}_", suffix=".md")
+    os.close(fd)
+    try:
+        Path(tmp).write_text(ans, encoding="utf-8")
+        r = subprocess.run([sys.executable, str(tool), "answer", str(t.get("note")), "--file", tmp, "--book", str(book)],
+                           capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
+    finally:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+    if r.returncode != 0:
+        raise MagicError(f"스티커 답 실패 — {(r.stdout + r.stderr).strip()[-200:]}")
+    return r.stdout.strip().splitlines()[-1]
+
+
+# ======= 명령줄 =======
+def build_parser():
+    # 해석기
+    ap = argparse.ArgumentParser(prog="magic.py", description="허브 마법봉 요청 — show · answer-node · answer-md · answer-code · answer-form · answer-note")
+    # 명령 묶음
+    sub = ap.add_subparsers(dest="cmd", required=True, metavar="명령")
+    p = sub.add_parser("show")
+    p.add_argument("rid")
+    p = sub.add_parser("answer-node")
+    p.add_argument("rid")
+    p.add_argument("body", nargs="?", default="")
+    p.add_argument("--short", required=True, help="결론 한 줄(60자)")
+    for name in ("answer-md", "answer-code", "answer-form", "answer-note"):
+        p = sub.add_parser(name)
+        p.add_argument("rid")
+        p.add_argument("answer")
+    return ap
+
+
+# 명령 실행 — 출력 글
+# a: 해석 결과
+def run(a):
+    if a.cmd == "show":
+        return cmd_show(a.rid)
+    req, _ = load_request(a.rid)
+    if req.get("role") != "2nd":
+        raise MagicError(f"{a.cmd} 는 2nd-magic 요청에만(이 요청 {req.get('role')})")
+    # 답 자리 종류
+    kind = (req.get("target") or {}).get("kind")
+    want = a.cmd.split("-", 1)[1]
+    if kind != want:
+        raise MagicError(f"이 요청의 답 자리는 {kind} — answer-{kind} 로")
+    if a.cmd == "answer-node":
+        store, _, tp = flowtree(req)
+        return store.apply(tp, "2nd", "answer", question=req["target"]["question"], short=a.short, text=a.body)["msg"]
+    if not a.answer.strip():
+        raise MagicError("답 없음")
+    if a.cmd == "answer-md":
+        p, line = answer_md(req, a.answer)
+        return f"답 넣음: {req['target'].get('file') or p}:{line}"
+    if a.cmd == "answer-code":
+        p, line = answer_code(req, a.answer)
+        return f"답 넣음: {req['target'].get('file') or p}:{line}"
+    if a.cmd == "answer-note":
+        return answer_note(req, a.answer)
+    sid = answer_form(req, a.answer, a.rid)
+    return f"설명 폼 등록: {sid} — devview 설문 탭(Alt+S)"
+
+
+# 명령줄 진입점 — 종료코드
+# argv: 인자(없으면 sys.argv)
+def main(argv=None):
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8")
+    # 인자 — --short(와 값)를 맨 뒤로: 파이썬 3.12 이하 argparse 는 «answer-node 요청id --short 결론 본문» 의 본문을 못 받음(3.13 부터 됨)
+    args = list(sys.argv[1:] if argv is None else argv)
+    if "--short" in args and args.index("--short") + 1 < len(args):
+        k = args.index("--short")
+        args = args[:k] + args[k + 2:] + args[k:k + 2]
+    try:
+        print(run(build_parser().parse_args(args)))
+    except (MagicError, hub.HubError, OSError, ValueError) as err:
+        print(f"실패: {err}", file=sys.stderr)
+        return 1
+    except Exception as err:  # noqa: BLE001 — flowtree_store.StoreError 등(모듈을 늦게 불러서 이름으로 못 잡음)
+        if type(err).__name__ == "StoreError":
+            print(f"실패: {err}", file=sys.stderr)
+            return 1
+        raise
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
