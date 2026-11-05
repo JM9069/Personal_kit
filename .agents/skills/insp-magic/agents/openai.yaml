@@ -1,6 +1,0 @@
-interface:
-  display_name: "insp-magic"
-  short_description: "허브 마법봉 INSP — 고른 검증 노드 검증을 복제 서브에게"
-
-policy:
-  allow_implicit_invocation: false

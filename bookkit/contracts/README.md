@@ -80,7 +80,7 @@ A2 는 A1 · A3 와 동시에 일한다 — 숫자가 필요하면 `{F['이름']
 
 `data` = `"raw"` 면 자료 정리(A1 facts) 전에 계산한 값 — 4장 머리에 회색 «자료 정리 전 · 2차판 갱신»(없거나 `"clean"` 이면 표시 없음).
 
-분석 틀(`bookkit/analysis/`)이 이 모양 전체를 낸다 — 경로 · 묶기형 `route_bundle.py` · 배차 · 사건 시뮬레이션형 `dispatch_sim.py` · 일정 · 배정형 `schedule_assign.py`. 틀을 `<책>/work/a3.py` 로 복사해 `load()`(입력 연결 칸)만 고친다.
+분석 틀(`bookkit/analysis/`)이 이 모양 전체를 낸다 — 경로 · 묶기형 `route_bundle.py` · 배차 · 사건 시뮬레이션형 `dispatch_sim.py` · 일정 · 배정형 `schedule_assign.py` · 배치 · 덮기형 `coverage_place.py`(`type` = `other`) · 측정 · 관리도형 `stat_model.py`(`type` = `other` · 재생기 칸에 `kind` — 아래 표 끝 세 줄). 틀을 `<책>/work/a3.py` 로 복사해 `load()`(입력 연결 칸)만 고친다.
 
 | 칸 | 모양(양식 함수 설명이 정본) | 책 자리 |
 |---|---|---|
@@ -91,6 +91,9 @@ A2 는 A1 · A3 와 동시에 일한다 — 숫자가 필요하면 `{F['이름']
 | `figures.순서_지도` | `figs.orders_map` 칸 | 4장 첫 절 |
 | `figures.C_화면_그림` | `figs.screens` 칸(계획에서 읽은 실제 값) | 부록 C |
 | `figures.상태전이` · `시각막대` · `두줄비교` | `figs.states` · `figs.time_bars` · `figs.pair_rows` 칸 — 2 · 4 · 5장의 «추가_그림» 칸이 쓴다(선택) | 2 · 4 · 5장 |
+| `players.채우기` · `고치기` 에 `"kind": "quiver"` | 지도 · 오른쪽 목록 대신 측정 화살표(`figs.quiver_map`) — `title · task · caption · plate{x, y, radius, scale, bar, unit} · right_title · frame_title · steps[{dx, dy, head, lines: [[글, 색]], limit, text, row}] · table` · 단계마다 dx · dy 개수 = 칸 수 · `limit` 보다 긴 화살표 빨강 | 4장 방안 A · B |
+| `players.이어붙이기` 에 `"kind": "chart"` | 시간표 대신 관리도(`figs.control_chart`) — `title · task · caption · chart{points: [[x, 값, 줄 번호, 한계 밖?]], series, steps: [[점 번호 …]], center, ucl, lcl, unit, axis, ticks, words} · heads · texts`(= 단계 수 + 1) | 4장 공통 단계 |
+| `figures.순서_지도` 에 `"kind": "arrows"` | 작은 지도 대신 화살표 두 판(`figs.arrows_pair`) — `x · y · radius · scale · unit · good{dx, dy, label} · bad{dx, dy, label}` | 4장 첫 절 |
 | `tables.순서_표` · `전부세기_표` · `조건별_표` | 표 칸 `{"header", "rows", "bad_cells": [[행, 열 이름]], "good_rows", "bad_rows", "notes": {"행": [글, 색]}, "small": true, "caption"}` — 전부 세기 시간은 **실제로 잰 값**(분석 틀 `brute_table`) | 4장 |
 
 재생기 크기 기준(RULES.md 6절): 재생기 표 8행 이하 · 단계 글 150자 이하 · 오른쪽 목록 8대 이하 · 지도 이름표는 점 위(아래는 `below`).

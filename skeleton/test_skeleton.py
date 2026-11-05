@@ -54,7 +54,7 @@ def test_plan(task, tmp_path):
     assert (tmp_path / "out" / "plan.md").read_text(encoding="utf-8").startswith("# 뼈대 계획표")
 
 
-# flowtree 올리기 — 묶음마다 완료 노드(add → start → done) · 두 번 불러도 노드가 늘지 않음 · 요약에 «이름:» · 이름 칸 처음 값
+# flowtree 올리기(Main 방식) — 묶음마다 완료 노드(add → start → done) · 두 번 불러도 노드가 늘지 않음 · 요약에 «이름:» · 이름 칸 처음 값
 #   --section 으로 붙일 섹션을 지정 · --map 으로 묶음별 섹션 · --bundles 로 일부만
 @pytest.mark.skipif(not FLOWTREE.is_file(), reason="flowtree.py 없음")
 def test_to_flowtree(task, tmp_path):
@@ -66,8 +66,8 @@ def test_to_flowtree(task, tmp_path):
     for _ in range(2):
         code, out = run("to_flowtree.py", "--plan", plan, "--tree", tree)
         assert code == 0, out
-    # 노드 — 기본 섹션 1 + 묶음 6
-    nodes = json.loads(tree.read_text(encoding="utf-8"))["nodes"]
+    # 노드 — 기본 섹션 1 + 묶음 6(빈 틀 제외)
+    nodes = [n for n in json.loads(tree.read_text(encoding="utf-8"))["nodes"] if not n.get("frame")]
     assert sorted(n["kind"] for n in nodes) == ["task"] * 7
     sec = next(n for n in nodes if n["title"] == "뼈대(skeleton)")
     # 묶음 노드 — 섹션 밑 · 완료(start · done 사건)
@@ -90,6 +90,48 @@ def test_to_flowtree(task, tmp_path):
     got = {n["title"][:5]: n["parent"] for n in json.loads(tree2.read_text(encoding="utf-8"))["nodes"] if n["title"].startswith("뼈대 K")}
     assert got == {"뼈대 K1": "t1", "뼈대 K2": "t2", "뼈대 K3": "t1"}
     assert not any(n["title"] == "뼈대(skeleton)" for n in json.loads(tree2.read_text(encoding="utf-8"))["nodes"])
+
+
+# flowtree 올리기(섹션 방식) — 새 노드 없이 빈 틀을 fill · 모자라면 다음 섹션 · 끝까지 없으면 실패 보고 · 다시 불러도 안 늘어남
+@pytest.mark.skipif(not FLOWTREE.is_file(), reason="flowtree.py 없음")
+def test_to_flowtree_섹션_틀(task, tmp_path):
+    run("plan.py", "--task", task, "--out", tmp_path / "out")
+    plan = tmp_path / "out" / "plan.json"
+    tree = tmp_path / "ft" / "tree.json"
+    tree.parent.mkdir()
+    # 지금 노드 — id → 노드
+    now = lambda: {n["id"]: n for n in json.loads(tree.read_text(encoding="utf-8"))["nodes"]}  # noqa: E731
+    for _ in range(2):
+        code, out = run("to_flowtree.py", "--plan", plan, "--tree", tree, "--section", "3")
+        assert code == 0, out
+    assert "섹션 3 틀이 모자람" in out or len(now()) == 252
+    nodes = now()
+    assert len(nodes) == 252  # 틀 수 그대로 — 새 노드 없음
+    full = sorted(k for k, n in nodes.items() if n["title"].startswith("뼈대 K"))
+    assert full == ["s3-t1", "s3-t2", "s3-t3", "s3-t4", "s4-t1", "s4-t2"]  # 위에서부터 · 넘친 2개는 다음 섹션
+    assert all(not nodes[k].get("frame") and [e["t"] for e in nodes[k]["events"]] == ["start", "done"] for k in full)
+    k1 = nodes["s3-t2"]
+    assert k1["title"].startswith("뼈대 K1") and k1["summary"].startswith("이름:") and k1["doc"]["path"] == "skeleton/cards/K1.md"
+    assert any("전부_읽기" in (r.get("name") or "") for r in k1["funcs"])
+    # 묶음별 대상 · 그 칸부터
+    tree2 = tmp_path / "ft2" / "tree.json"
+    tree2.parent.mkdir()
+    code, out = run("to_flowtree.py", "--plan", plan, "--tree", tree2, "--bundles", "K1", "K2", "--section", "s5-t3", "--map", "K2=0")
+    assert code == 0, out
+    got = {n["id"] for n in json.loads(tree2.read_text(encoding="utf-8"))["nodes"] if n["title"].startswith("뼈대 K")}
+    assert got == {"s5-t3", "s0-t1"}
+    # 틀이 끝까지 모자람 — 실패 보고 · 넣은 것은 남음
+    tree3 = tmp_path / "ft3" / "tree.json"
+    tree3.parent.mkdir()
+    code, out = run("to_flowtree.py", "--plan", plan, "--tree", tree3, "--section", "8")
+    assert code == 1 and "빈 틀 작업 칸 없음" in out and "K4" in out and "K5" in out
+    assert sum(n["title"].startswith("뼈대 K") for n in json.loads(tree3.read_text(encoding="utf-8"))["nodes"]) == 4
+    # 없는 섹션 · 미리 보기는 파일을 안 만듦
+    code, out = run("to_flowtree.py", "--plan", plan, "--tree", tree3, "--section", "9")
+    assert code == 1 and "0~8" in out
+    tree4 = tmp_path / "ft4" / "tree.json"
+    code, out = run("to_flowtree.py", "--plan", plan, "--tree", tree4, "--section", "2", "--dry")
+    assert code == 0 and "섹션 2 빈 틀" in out and not tree4.exists()
 
 
 # 부품 복사 — import 바꿈 · 의존 부품 같이 · 안 덮음 · WORKLOG 덧붙이기만

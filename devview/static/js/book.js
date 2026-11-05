@@ -4,7 +4,7 @@
 //   오른쪽 = 페이지 서버(포트 +100)의 그 html 을 iframe 으로 — 스티커 · 🪄 스티커 마법봉이 페이지 서버 같은 출처라 그대로 동작
 //   목록은 탭을 열 때 · «새로고침» 단추로만 다시 읽는다(폴링 없음)
 import { api } from './api.js';
-import { $, esc, on, store } from './util.js';
+import { $, esc, on, emit, store } from './util.js';
 import { pageUrl } from './editor.js';
 
 // 화면 부품 · 마지막 목록 · 고른 책(작업 폴더 기준 경로) · 페이지 서버 포트
@@ -50,9 +50,11 @@ export function initBook(info) {
   //   다른 출처(페이지 서버 = 포트 +100)라 보낸 창이 이 iframe 인지 · 메시지 모양 · 포트만 본다
   const box = $('.dv-book', view);
   box.classList.toggle('no-side', store.get('book.side', '1') === '0');
+  // 책 안 Alt+Q · W · B → {book:'key', code} — 다른 출처라 iframe 안 키를 main.js 가 직접 못 받는다
   window.addEventListener('message', (e) => {
-    if (e.source !== el.frame.contentWindow || e.data?.book !== 'toggle-list') return;
+    if (e.source !== el.frame.contentWindow || !['toggle-list', 'key'].includes(e.data?.book)) return;
     try { if (pagePort && +new URL(e.origin).port !== pagePort) return; } catch { return; }
+    if (e.data.book === 'key') { emit('hot-key', String(e.data.code)); return; }
     const hide = !box.classList.contains('no-side');
     box.classList.toggle('no-side', hide);
     store.set('book.side', hide ? '0' : '1');
@@ -107,6 +109,24 @@ function pick(path) {
   store.set('book.cur', cur);
   paint();
   show();
+}
+
+// 책 열기 + 주소 꼬리(#note=…) — 알림 종이 부름. 책 폴더 이름이면 그 책 마지막 판, 없으면 경로 그대로
+// t: {book, path} / hash: «#note=<id>&t=<꼬리>» / 반환: 열었는지
+export async function bookOpen(t, hash = '') {
+  await load();
+  const hit = list.books.find((b) => b.book === t.book && b.latest) || list.books.find((b) => b.path === t.path);
+  if (!hit || !pagePort) return false;
+  pick(hit.path);
+  const url = pageUrl(hit.path);
+  el.frame.dataset.url = url;
+  el.frame.src = url + hash;
+  return true;
+}
+
+// 2ND 마법봉 단축키 — 책 안에서 고른 메모의 🪄 를 누르게 함
+export function bookWand() {
+  el.frame?.contentWindow?.postMessage({ book: 'wand' }, '*');
 }
 
 // 시험 · 디버깅용

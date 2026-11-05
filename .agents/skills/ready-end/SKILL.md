@@ -31,12 +31,12 @@ description: 제출 직전 최종 점검 — 배포(배포 계획서 + 작업 �
 	- 실행 문서(HOW_TO_RUN)는 유저가 직접 쓴다 — 에이전트는 쓰지 않는다
 	- 인수인계 문서: 과제가 안 줘도 «유지 · 확장 가능한 구조» 루브릭 — 있나만 보고 없으면 유저에게 한 줄(무엇을 어디에 둘지는 유저)
 - ② 구동 — 서버는 유저 터미널 탭에서(Codex 가 띄운 서버는 끊긴 적 있음): 0절이 docker 사용 가능이면 build · run 두 줄, 아니면 bash <키트>/run.sh 한 줄을 주고 «떴어» 를 받은 다음 턴에 ③
-- ③ 정상 동작 확인 — curl 은 처음부터 샌드박스 밖 승인: /health · 계획서 2절 주요 API(상태 코드 + 본문) · 시험(python3 -m pytest -q tests · 컨테이너면 docker run --rm <이미지> python -m pytest -q tests) · 화면 핵심 흐름은 4절 Browser 도구(유저) — chromium 이 있으면(envcheck C3) 헤드리스 스크린샷도
+- ③ 정상 동작 확인 — curl 은 처음부터 샌드박스 밖 승인: /health · 계획서 2절 주요 API(상태 코드 + 본문) · 시험(서브가 병렬로 — python3 -m pytest -q -n auto tests · 컨테이너면 docker run --rm <이미지> python -m pytest -q -n auto tests) · 화면 핵심 흐름은 4절 Browser 도구(유저) — chromium 이 있으면(envcheck C3) 헤드리스 스크린샷도
 - 단계마다 명령 + 실제 출력(줄여도 숫자 · 상태 코드는 그대로)을 계획서 4절에 → 그 파일만 커밋 · docker 를 못 돌렸으면 계획서 4절에 그 사실 한 줄 + run.sh 로 확인한 결과
 
 ## 2. 점검 실행
 
-        python3 ~/.codex/skills/ready-end/ready_end.py --card                 # 기본(테스트 포함)
+        python3 ~/.codex/skills/ready-end/ready_end.py --card                 # 기본(전체 시험 포함 · 병렬 · 서브가 돌린다 — MAIN 이 직접 돌릴 땐 --no-test)
         python3 ~/.codex/skills/ready-end/ready_end.py --start-port 3000      # run.sh 를 실제로 띄워 그 포트 응답까지
 
 - 🔴 --start-port 와 R3 테스트(앱을 띄우는 시험 tests/test_ui_app.py)는 소켓을 쓴다 — Codex 샌드박스 안에서는 막혀 실패한다 → 점검은 처음부터 샌드박스 밖 승인으로 · venv 를 만들었으면 python3 대신 .venv/bin/python 으로 실행(R3 시험이 그 파이썬으로 돈다). **권한 상승(샌드박스 밖)** 으로 실행하거나 유저 터미널 탭에서 돌린다
@@ -66,6 +66,7 @@ description: 제출 직전 최종 점검 — 배포(배포 계획서 + 작업 �
 
 ## 3. 고치는 규칙
 - 실패 하나 = 커밋 하나(CODE_RULE 11-1 · «[섹션] 무엇 - 왜») · 다 고친 뒤 ready_end.py 를 다시 돌려 «요약: 실패 없음» 확인
+- 🔴 전체 시험(R3)은 확인용이다 — 실패해도 앱이 안 뜨거나 데이터가 망가지는 수준의 치명적 버그만 고치고, 나머지는 보고에 «미수정 실패» 로 남긴다(제출 직전이라 고칠 시간이 빠듯하다 · 유저 지정 11/04)
 - 큰 정리 · 리팩터링 금지(막판 통째 변경은 의심 · 기능이 깨질 수 있음)
 - 서버 종료는 내가 띄운 PID 로만(pkill · 이름 종료 금지)
 

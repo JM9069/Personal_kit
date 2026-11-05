@@ -5,7 +5,7 @@ description: devview 허브(대화 탭)에 이 세션을 붙이고($codex-hub [�
 
 # codex-hub — 허브에 붙기 · 상태 줄 · 누적 · 보내기
 
-1. 이름(앞에서부터 처음 나오는 것): 유저가 준 이름(«$codex-hub 이름») → 역할 스킬이 정한 이름(main|insp|2nd) → 세션 이름(python3 ~/.codex/skills/ready-start/whoami.py list | grep "$CODEX_THREAD_ID" 줄의 UUID 뒤 글자 · None 이면 없음) → 없으면 유저에게 «허브에 쓸 이름?» 묻고 멈춘다
+1. 이름(앞에서부터 처음 나오는 것): 유저가 준 이름(«$codex-hub 이름») → 역할 스킬이 정한 이름(main|2nd) → 세션 이름(python3 ~/.codex/skills/ready-start/whoami.py list | grep "$CODEX_THREAD_ID" 줄의 UUID 뒤 글자 · None 이면 없음) → 없으면 유저에게 «허브에 쓸 이름?» 묻고 멈춘다
    - 붙기(세션 시작 때 한 번): python3 ~/.codex/skills/codex-hub/hub.py register --nick '이름'
    - thread 는 CODEX_THREAD_ID · 비면 출력 «thread 없음» 그대로 보고 · 같은 이름이면 이 세션으로 바뀜
    - 보고 한 줄: «대화 탭에 <이름> 등록 · thread <앞 8자>»

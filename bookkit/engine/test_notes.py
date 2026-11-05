@@ -112,9 +112,10 @@ def main():
             pi = pg.evaluate("+document.querySelector('#book [data-id=\"s3-Q1\"]').closest('.page').dataset.pi")
             pg.evaluate(f"window.__book.go({pi})")
             pg.wait_for_timeout(500)
-            na = pg.locator(".note .na")
-            check(na.count() == 1 and "기본 가정" in na.inner_text(), "새로고침(2차판) 뒤 스티커 아래 답이 보인다")
-            check(na.count() == 1 and na.is_visible(), "답 칸이 화면에 보인다(같은 블록 자리)")
+            na = pg.locator("#spQa .qr")
+            check(na.count() == 1 and pg.locator(".note").count() == 0, "새로고침(2차판) 뒤 답 달린 스티커는 빠지고 아래 질문 줄 행")
+            na.locator(".qrh").click()
+            check("기본 가정" in na.inner_text() and na.locator(".qrb").is_visible(), "행 펼침 — 답이 보인다(같은 블록 쪽)")
             # 판 파일(dist/<doc>__v<N>_<판>.html) — 1차판 · 2차판 두 파일 모두에서 같은 스티커(책 폴더의 notes.json 하나)
             vs = json.loads((BOOK / "dist" / "versions.json").read_text(encoding="utf-8"))["versions"]
             check([v["name"] for v in vs] == ["1차판", "2차판"], f"판 목록 {[v['file'] for v in vs]}")
@@ -124,8 +125,10 @@ def main():
                 pi = pg.evaluate("+document.querySelector('#book [data-id=\"s3-Q1\"]').closest('.page').dataset.pi")
                 pg.evaluate(f"window.__book.go({pi})")
                 pg.wait_for_timeout(500)
-                na = pg.locator(".note .na")
-                check(na.count() == 1 and "기본 가정" in na.inner_text() and na.is_visible(), f"판 파일 {v['file']} 에서도 같은 스티커 · 답")
+                na = pg.locator("#spQa .qr")
+                if na.count() == 1:
+                    na.locator(".qrh").click()
+                check(na.count() == 1 and "기본 가정" in na.inner_text() and na.locator(".qrb").is_visible(), f"판 파일 {v['file']} 에서도 같은 질문 줄 행 · 답")
             # «노트 목록» 단추 — 밖(새 탭)이면 원래 링크 · iframe 안이면 부모에 {book:'toggle-list'}(devview 가 왼쪽 책 목록을 숨김 ↔ 보임)
             check(pg.locator("#bHome").get_attribute("title") == "노트 목록" and pg.locator("#bHome").get_attribute("href"),
                   "iframe 밖 — «노트 목록» 링크 · 툴팁 그대로")
@@ -142,10 +145,13 @@ def main():
                   and pg.locator("#f").get_attribute("src") == f"{NAME}.html", f"iframe 안 클릭 → 부모에 toggle-list · 링크로 안 넘어감 {pg.evaluate('window.msgs')}")
             r = subprocess.run([sys.executable, str(KIT / "notes.py"), "list"], capture_output=True, text=True, encoding="utf-8")
             check("답할 스티커 없음" in r.stdout, "답한 뒤 list = 답할 스티커 없음")
-            # 지우기(× → DELETE) — 지금 페이지는 iframe 감싼 쪽이라 책(iframe) 안의 스티커를 누른다
-            fr.locator(".note .nh button").click()
+            # 지우기(질문 줄 행 «지우기» → DELETE) — 지금 페이지는 iframe 감싼 쪽이라 책(iframe) 안을 누른다
+            fpi = pg.frame_locator("#f").locator('#book [data-id="s3-Q1"]').evaluate("b => +b.closest('.page').dataset.pi")
+            fr.locator("body").evaluate(f"() => window.__book.go({fpi})")
+            fr.locator("#spQa .qrh").click()
+            fr.locator("#spQa .qdel").click()
             pg.wait_for_timeout(300)
-            check(json.loads(nf.read_text(encoding="utf-8")) == [], "× 로 지우면 notes.json 에서 빠진다")
+            check(json.loads(nf.read_text(encoding="utf-8")) == [] and fr.locator("#spQa .qr").count() == 0, "행 «지우기» 면 notes.json 에서 빠지고 행도 사라진다")
             # 페이지 서버의 다른 경로는 그대로 읽기 전용
             req = urllib.request.Request(url, data=b"x", method="POST")
             try:

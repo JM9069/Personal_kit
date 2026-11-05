@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 """코덱스 허브 백엔드(devview) — 작업 폴더 .codex-hub(등록 · 상태 줄 · 누적 · magic 요청) + Codex 기록(rollout) 결합 · 표준 라이브러리만
 
-    devview: GET  /api/hub              행 목록(기본 MAIN · INSP · 2ND + 추가 등록) · 상태 · effort · 맥락 · 상태 줄 · 마지막 턴
+    devview: GET  /api/hub              행 목록(기본 MAIN · 2ND + 추가 등록) · 상태 · effort · 맥락 · 상태 줄 · 마지막 턴
              GET  /api/hub/log?nick=    누적(한 줄씩 · 오래된 것이 위)
              GET  /api/hub/chat?nick=&after=N   대화(유저 메시지 · 최종 답변 · 혼잣말(commentary → note) · 오류 — 주입 문서 · 도구 · 생각 뺌)
+             GET  /api/hub/subagents?nick=      그 세션의 서브 줄(이름 · 일함/쉼/중단 · 지금 일 한 줄 — 서브 기록만 이어 읽음)
              POST /api/hub/queue {nick, text}   그 세션에 codex queue(셸 없이 인자 목록)
              POST /api/hub/magic {nick, view, selection, question}   요청 파일 + (2ND 그래프 · Git · 설문 · 앱) 질문 노드 즉시 등록 + queue «🪄 지시 본문 … $역할-magic 요청id»
-             (책 스티커: 페이지 서버 POST /api/notes/<id>/magic → note_magic → 2ND · 답 자리 note)
+             (책 스티커: 페이지 서버 POST /api/notes/<id>/magic · /api/notes/<id>/thread/<꼬리 id>/magic → note_magic → 2ND · 답 자리 note)
+             (설문 제출: survey.py submit → magic(view survey) → 확정 문항 MAIN · 질문 문항 2ND · 답 자리 survey)
 파일: <작업 폴더>/.codex-hub/ — sessions/<닉>.json(hub.py register · status) · logs/<닉>.jsonl(hub.py log) · requests/<요청id>.json(여기서 씀)
 짝 맞추기: 등록의 thread = rollout session_meta.id = 세션 안 CODEX_THREAD_ID
 queue 실행 파일: DEVVIEW_CODEX(시험용 · 경로 또는 JSON 목록) → 윈도우는 codex.cmd 옆 node + codex.js(cmd.exe 를 거치면 글 속 기호가 풀려서) → PATH 의 codex
@@ -20,6 +22,7 @@ import secrets
 import shutil
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -29,9 +32,9 @@ import codex_sessions  # noqa: E402
 # 허브 폴더 이름
 HUB = ".codex-hub"
 # 기본 행(역할) · 화면 이름 · magic 스킬
-ROLES = ("main", "insp", "2nd")
-LABELS = {"main": "MAIN", "insp": "INSP", "2nd": "2ND"}
-MAGIC = {"main": "main-magic", "insp": "insp-magic", "2nd": "2nd-magic"}
+ROLES = ("main", "2nd")
+LABELS = {"main": "MAIN", "2nd": "2ND"}
+MAGIC = {"main": "main-magic", "2nd": "2nd-magic"}
 # 닉네임 모양(hub.py 와 같음)
 NICK_RE = re.compile(r"^[0-9A-Za-z가-힣_-]{1,24}$")
 # 요청 id 모양
@@ -120,7 +123,7 @@ def norm_nick(nick):
     return n
 
 
-# 화면 이름 — MAIN · INSP · 2ND · 추가 세션은 등록 이름 그대로
+# 화면 이름 — MAIN · 2ND · 추가 세션은 등록 이름 그대로
 # nick: 닉네임
 def label(nick):
     return LABELS.get(nick, nick)
@@ -579,6 +582,31 @@ class ChatState:
         self.items.append({"role": "user", "text": text, "at": at, "ts": ts, "turn": self.turn, "via": self.via, "exact": exact})
 
 
+# 기록 이어 읽기 — 지난 위치 뒤 완성된 줄만 st.feed 로 · 끝이 잘린 줄(쓰는 중)은 st.rest 에 두고 다음에 · 망가진 줄은 건너뜀
+# path: 기록 파일 / size: 지금 크기 / st: offset · rest · feed 가 있는 상태 / keys: 이 글자가 든 줄만 해석
+def read_new(path, size, st, keys):
+    if size <= st.offset:
+        return
+    with open(path, "rb") as f:
+        f.seek(st.offset)
+        # 새 바이트
+        data = st.rest + f.read(size - st.offset)
+    st.offset = size
+    # 줄 목록 · 끝 반쪽
+    parts = data.split(b"\n")
+    st.rest = parts.pop()
+    for raw in parts:
+        if not raw.strip() or not any(k in raw for k in keys):
+            continue
+        try:
+            # 줄 사전
+            o = json.loads(raw.decode("utf-8", "replace"))
+        except ValueError:
+            continue
+        if isinstance(o, dict):
+            st.feed(o)
+
+
 # rollout 대화 항목 — 바뀐 부분만 이어 읽음
 # path: 기록 파일 / claude: Claude 기록이면 True
 def chat_items(path, claude=False):
@@ -589,30 +617,10 @@ def chat_items(path, claude=False):
     if st is None or size < st.offset:
         st = ClaudeChatState() if claude else ChatState()
         _CHAT[str(path)] = st
-    if size > st.offset:
-        with open(path, "rb") as f:
-            f.seek(st.offset)
-            # 새 바이트
-            data = st.rest + f.read(size - st.offset)
-        st.offset = size
-        # 줄 목록 · 끝 반쪽
-        parts = data.split(b"\n")
-        st.rest = parts.pop()
-        for raw in parts:
-            if not raw.strip():
-                continue
-            # 빠른 거르기 — 대화에 쓰는 줄만 해석
-            keys = (b'"user"', b'"assistant"') if claude else (b"UserMessage", b'"user"', b"final_answer", b"commentary", b"partial_answer",
-                                                               b"task_complete", b"task_started", b"turn_aborted")
-            if not any(k in raw for k in keys):
-                continue
-            try:
-                # 줄 사전
-                o = json.loads(raw.decode("utf-8", "replace"))
-            except ValueError:
-                continue
-            if isinstance(o, dict):
-                st.feed(o)
+    # 빠른 거르기 — 대화에 쓰는 줄만 해석
+    keys = (b'"user"', b'"assistant"') if claude else (b"UserMessage", b'"user"', b"final_answer", b"commentary", b"partial_answer",
+                                                       b"task_complete", b"task_started", b"turn_aborted")
+    read_new(path, size, st, keys)
     if len(_CHAT) > 50:
         _CHAT.clear()
         _CHAT[str(path)] = st
@@ -648,6 +656,190 @@ def chat(root, nick, after=0):
     # 내보낼 항목 — 내부 칸(exact) 뺌 · 번호 i
     out = [dict({k: v for k, v in it.items() if k != "exact"}, i=i) for i, it in enumerate(items[start:], start)]
     return {"nick": n, "label": label(n), "thread": reg["thread"], "total": len(items), "items": out, "reset": reset}
+
+
+# ======= 서브 상태 — Codex 기록(rollout)만 읽음 · 모델 호출 · app-server 연결 없음 =======
+# 근거(WSL Codex 0.163 실측): 긴 명령 중 25초까지 새 줄 없음 → 조용함으로 쉼 판정 안 함 · 턴 시작 · 끝 줄로만
+#   서브가 받는 지시(agent_message)는 본문이 암호화돼 있으면 못 읽음 → 도구 호출 · 혼잣말로 넘어감
+#   메모리에서 내려간 서브(notLoaded)는 기록에 안 남음 → 쉼과 구별 못 함
+# 한 줄 최대 글자
+SUB_TEXT = 70
+# 해석할 줄 — 이 글자가 없는 줄(토큰 수 · 도구 출력 등)은 건너뜀
+SUB_KEYS = (b'"task_started"', b'"task_complete"', b'"turn_aborted"', b'"agent_message"', b'"custom_tool_call"', b'"function_call"',
+            b'"commentary"', b'"user"')
+# 서브 기록 색인 — base: sessions 폴더 · seen: 머리를 읽은 파일 · kids: 부모 thread → 서브 머리 목록 · full: 전체 훑기 끝남
+_SUBS = {}
+# 서브 기록 경로 → 이어 읽기 상태
+_SUB_STATE = {}
+# 색인 · 상태 잠금(서버가 요청마다 스레드)
+_SUB_LOCK = threading.Lock()
+
+
+# 기록 머리 → 서브 정보 — 서브가 아니면 None · 머리 줄을 아직 쓰는 중이면 False
+#   thread_spawn 만 서브로 봄(subagent.other 는 승인 검토 같은 내부 세션)
+# path: 기록 파일
+def sub_head(path):
+    with open(path, "rb") as f:
+        raw = f.readline()
+    if not raw.endswith(b"\n"):
+        return False
+    try:
+        # 머리 줄 내용
+        p = json.loads(raw.decode("utf-8", "replace")).get("payload")
+        spawn = p["source"]["subagent"]["thread_spawn"]
+        parent = spawn["parent_thread_id"]
+    except (ValueError, AttributeError, KeyError, TypeError):
+        return None
+    # 별명 — 자동으로 붙는 이름
+    nickname = spawn.get("agent_nickname") or p.get("agent_nickname")
+    return {"id": p.get("id"), "parent": parent, "path": str(path), "nickname": nickname,
+            "name": spawn.get("agent_path") or p.get("agent_path") or nickname or "?"}
+
+
+# 부모 thread → 서브 머리 목록 — 처음 한 번 전체를 훑고, 그다음은 최근 날짜 폴더 둘의 새 파일만 머리를 읽음
+def sub_index():
+    # 세션 폴더
+    base = codex_sessions.codex_home() / "sessions"
+    if _SUBS.get("base") != base:
+        _SUBS.clear()
+        _SUB_STATE.clear()
+        _SUBS.update(base=base, seen=set(), kids={}, full=False)
+    if not base.is_dir():
+        return _SUBS["kids"]
+    # 볼 파일(sessions/연/월/일/rollout-*.jsonl)
+    if _SUBS["full"]:
+        files = [f for d in sorted(base.glob("*/*/*"))[-2:] for f in d.glob("rollout-*.jsonl")]
+    else:
+        files = list(base.rglob("rollout-*.jsonl"))
+        _SUBS["full"] = True
+    for f in files:
+        if f in _SUBS["seen"]:
+            continue
+        try:
+            head = sub_head(f)
+        except OSError:
+            continue
+        if head is False:
+            continue
+        _SUBS["seen"].add(f)
+        if head:
+            _SUBS["kids"].setdefault(head["parent"], []).append(head)
+    return _SUBS["kids"]
+
+
+# 도구 호출 줄 → 보일 글 — 스크립트로 싼 exec 는 글자로만 뽑음(실행 · 평가하지 않음) · 앞 프로세스 후속 조회(write_stdin)는 새 일이 아니라 None
+# p: custom_tool_call · function_call 내용
+def sub_tool(p):
+    name = str(p.get("name") or "")
+    if p.get("type") == "custom_tool_call" and name == "exec":
+        # 스크립트 글 · 그 안의 도구 이름들
+        code = str(p.get("input") or "")
+        used = [x for x in re.findall(r"tools\.(\w+)", code) if x != "write_stdin"]
+        if not used:
+            return None
+        cmds = re.findall(r"""\bcmd["']?\s*:\s*(["'`])((?:\\.|(?!\1).)*)\1""", code, re.S)
+        return cmds[-1][1].replace('\\"', '"').replace("\\n", " ") if used[-1] == "exec_command" and cmds else used[-1]
+    if name == "write_stdin":
+        return None
+    if name == "exec_command":
+        try:
+            return str(json.loads(p.get("arguments") or "{}").get("cmd") or name)
+        except (ValueError, AttributeError):
+            return name
+    return name or None
+
+
+# 글의 첫 줄(빈 줄 건너뜀)
+# text: 글
+def first_text(text):
+    return next((x.strip() for x in str(text or "").splitlines() if x.strip()), "")
+
+
+# 서브 하나의 상태 — 이어 읽을 때 유지
+class SubState:
+    def __init__(self):
+        # 읽은 바이트 · 남은 반쪽 줄 · 열린 턴 id · 일함 여부 · 중단 이유 · 지시 · 도구 · 혼잣말 · 마지막 결과 · 마지막 기록 시각
+        self.offset = 0
+        self.rest = b""
+        self.turn = None
+        self.work = False
+        self.why = None
+        self.order = self.tool = self.note = self.result = ""
+        self.at = ""
+
+    # 줄 하나 반영 — 일함 · 쉼은 턴 시작 · 끝 줄만 바꾼다(끝난 뒤 늦게 오는 도구 줄은 일함으로 안 돌림)
+    # o: 줄 사전
+    def feed(self, o):
+        # 줄 종류 · 내용 · 하위 종류
+        kind, p = o.get("type"), o.get("payload")
+        if not isinstance(p, dict):
+            return
+        sub = p.get("type")
+        if kind == "event_msg" and sub == "task_started":
+            self.turn, self.work, self.why = p.get("turn_id"), True, None
+            self.order = self.tool = self.note = ""
+        elif kind == "event_msg" and sub in ("task_complete", "turn_aborted"):
+            if self.turn and p.get("turn_id") not in (None, self.turn):
+                return
+            self.turn, self.work = None, False
+            self.result = first_text(p.get("last_agent_message"))
+            # 오류 칸
+            err = p.get("error") if isinstance(p.get("error"), dict) else None
+            if err:
+                self.why = first_text(err.get("message") or err.get("codex_error_info") or "오류")
+            elif sub == "turn_aborted":
+                self.why = f"턴 중단됨({p['reason']})" if p.get("reason") else "턴 중단됨"
+        elif kind == "response_item" and sub == "agent_message":
+            # 머리 «Message Type: … Payload:» 뒤 본문 — 암호화면 비어 있음 · FINAL_ANSWER 는 지시가 아니라 보고
+            head, mark, body = join_text(p.get("content")).partition("Payload:\n")
+            if mark and "FINAL_ANSWER" not in head and first_text(body):
+                self.order = first_text(body)
+        elif kind == "response_item" and sub == "message":
+            text = join_text(p.get("content"))
+            if p.get("role") == "user" and text.strip() and not injected(text):
+                self.order = first_text(text)
+            elif p.get("role") == "assistant" and p.get("phase") == "commentary" and text.strip():
+                self.note = first_text(text)
+        elif kind == "response_item" and sub in ("custom_tool_call", "function_call"):
+            self.tool = sub_tool(p) or self.tool
+        else:
+            return
+        self.at = stamp(o.get("timestamp"))[0] or self.at
+
+    # 화면 한 줄 내용
+    # head: 서브 머리
+    def row(self, head):
+        if self.work:
+            text = self.order or self.tool or self.note or "턴 실행 중"
+        else:
+            text = self.result or self.why or "대기"
+        return {"id": head["id"], "name": head["name"], "nickname": head["nickname"], "state": "work" if self.work else "rest",
+                "stopped": bool(self.why) and not self.work, "why": self.why, "text": short(text, SUB_TEXT), "at": self.at}
+
+
+# GET /api/hub/subagents — 그 세션의 서브 줄 · 일하는 서브가 위 · 그 안은 생긴 순서 · 서브가 없거나 등록이 없으면 빈 목록
+# root: 작업 폴더 / nick: 닉네임
+def subagents(root, nick):
+    # 닉네임 · 부모 thread · 줄 목록
+    n = norm_nick(nick)
+    reg = sessions(root).get(n) or {}
+    thread = None if reg.get("kind") == "claude" else reg.get("thread")
+    out = []
+    with _SUB_LOCK:
+        for head in sorted(sub_index().get(thread, []), key=lambda h: h["path"]) if thread else []:
+            # 이어 읽기 상태
+            st = _SUB_STATE.setdefault(head["path"], SubState())
+            try:
+                size = os.stat(head["path"]).st_size
+                if size < st.offset:
+                    # 파일이 바뀜 — 처음부터
+                    st.__init__()
+                read_new(head["path"], size, st, SUB_KEYS)
+            except OSError:
+                continue
+            out.append(st.row(head))
+    out.sort(key=lambda r: r["state"] != "work")
+    return {"nick": n, "label": label(n), "thread": thread, "subs": out, "working": sum(r["state"] == "work" for r in out)}
 
 
 # queue 실행 명령 — (인자 목록 앞부분, 못 찾은 이유)
@@ -824,12 +1016,32 @@ def magic_text(n, rid, req, ft=None, ws=None, claude=False):
     # 본문 줄
     body = []
     t = req.get("target") or {}
-    if n == "main":
+    if t.get("kind") == "survey":
+        # 설문 제출 — MAIN = 확정 문항(결정 문서 반영 · 커밋 → 작업) · 2ND = 질문 문항(답)
+        items = t.get("items") or []
+        head = f"설문 ‹{short(t.get('title'), 60)}›({t.get('survey')})"
+        body.append(f"{head} 확정 {len(items)}개 — 결정 문서에 반영 · 커밋하고 작업 시작해 줘" if n == "main"
+                    else f"{head} 질문 {len(items)}개 — 답해 줘")
+        for it in items[:20]:
+            body.append(f"- [{it.get('id') or '-'}] {short(it.get('question'), 80)} → {short(it.get('text'), 160)}")
+        if len(items) > 20:
+            body.append(f"- 외 {len(items) - 20}개(magic.py show)")
+        if t.get("extra"):
+            body.append(f"추가 지시: {short(t['extra'], 300)}")
+    elif n == "main":
         for x in req.get("nodes") or []:
             # 트리 노드 · 섹션 앵커 · 요약 · 이름 칸
             nd = nodes.get(x["id"]) or {}
             title = nd.get("title") or x.get("title") or x["id"]
-            if (nd.get("kind") or x.get("kind")) != "task":
+            # 종류 — 트리 기준(화면이 보낸 종류만 믿지 않음) · MAIN 이 서브에게 나눈다
+            kind = nd.get("kind") or x.get("kind")
+            if kind == "verify":
+                body.append(f"검증 노드 ‹{short(title, 60)}›({x['id']}) 확인해 줘" + (f" — {short(nd['summary'], 80)}" if nd.get("summary") else ""))
+                continue
+            if kind == "question":
+                body.append(f"질문 노드 ‹{short(title, 60)}›({x['id']}) 답해 줘")
+                continue
+            if kind != "task":
                 body.append(f"맥락: ‹{short(title, 60)}›({x['id']})")
                 continue
             anchor = str((nd.get("doc") or {}).get("anchor") or "") if isinstance(nd.get("doc"), dict) else ""
@@ -845,19 +1057,20 @@ def magic_text(n, rid, req, ft=None, ws=None, claude=False):
             for r in rows:
                 if fs.func_pending(r):
                     body.append(f"이름 바뀜: {fs.func_change(r)} — 코드 · 시험 · 문서도 새 이름으로 바꾸고 funcs-ack {x['id']}")
-    elif n == "insp":
-        for x in req.get("nodes") or []:
-            # 트리 노드 · 검증 내용
-            nd = nodes.get(x["id"]) or {}
-            line = f"검증 노드 ‹{short(nd.get('title') or x.get('title') or x['id'], 60)}›({x['id']}) 확인해 줘"
-            if nd.get("summary"):
-                line += f" — {short(nd['summary'], 80)}"
-            body.append(line)
     else:
         # 대상 한 줄
-        if t.get("kind") == "note":
+        if t.get("kind") == "note" and t.get("thread"):
+            # 꼬리 질문 — 원 질문 · 앞 답(마지막 꼬리 답 또는 원 답) · 꼬리 질문 · 스티커 id + 꼬리 id
+            prev = [x for x in t.get("prev") or [] if x.get("a")]
+            body.append(f"책 ‹{short(t.get('book') or t.get('doc'), 40)}› 스티커 꼬리 질문"
+                        f" (스티커 {t.get('note')} · 꼬리 {t['thread']}" + (f" · 블록 {t['block']}" if t.get("block") else "") + ")")
+            body.append(f"원 질문: {short(t.get('orig_q'), 200)}")
+            body.append(f"앞 답: {short(prev[-1]['a'] if prev else t.get('orig_a'), 300)}")
+            body.append(f"꼬리 질문: {short(req.get('question'), 300)}")
+        elif t.get("kind") == "note":
             where = f"책 ‹{short(t.get('book') or t.get('doc'), 40)}› 스티커 질문"
             body.append(f"{where}: {short(req.get('question'), 300)}" + (f" (블록 {t['block']})" if t.get("block") else ""))
+            body.append(f"스티커 {t.get('note')} — 답에 짧은 제목(--title · 20자 안팎)도 달 것")
         else:
             if t.get("kind") == "node":
                 tg = [f"‹{short((nodes.get(i) or {}).get('title') or i, 40)}›({i})" for i in t.get("targets") or []]
@@ -871,8 +1084,8 @@ def magic_text(n, rid, req, ft=None, ws=None, claude=False):
 
 
 # 책 스티커 → 2ND 마법봉 요청 — 페이지 서버가 notes.json 의 스티커를 읽어 부름(클라이언트는 id 만 보냄)
-# root: 작업 폴더 / note: 스티커 항목 / notes_file: notes.json 경로 / doc: 책 html 상대 경로
-def note_magic(root, note, notes_file, doc):
+# root: 작업 폴더 / note: 스티커 항목 / notes_file: notes.json 경로 / doc: 책 html 상대 경로 / tid: 꼬리 질문 id(없으면 원 질문)
+def note_magic(root, note, notes_file, doc, tid=None):
     # 블록 ID — ctx 끝의 «b=…»
     m = re.search(r"b=([^\s|]+)", str(note.get("ctx") or ""))
     try:
@@ -883,7 +1096,19 @@ def note_magic(root, note, notes_file, doc):
     book = Path(notes_file).parent.name
     sel = {"note": note.get("id"), "notes_file": rel, "doc": doc, "book": book, "ctx": str(note.get("ctx") or "")[:300],
            "block": m.group(1) if m else ""}
-    return magic(root, {"nick": "2nd", "view": "book", "selection": sel, "question": str(note.get("text") or "")})
+    question = str(note.get("text") or "")
+    if tid:
+        # 꼬리 질문 — 질문 = 꼬리 글 · 맥락 = 원 질문 · 원 답 · 앞 꼬리(문답)
+        th = [t for t in note.get("thread") or [] if isinstance(t, dict)]
+        cur = next((t for t in th if t.get("id") == tid), None)
+        if cur is None:
+            raise HubError(404, f"꼬리 질문 없음: {tid}")
+        sel["thread"] = tid
+        sel["orig_q"] = question
+        sel["orig_a"] = str(note.get("answer") or "")
+        sel["prev"] = [{"id": t.get("id"), "q": str(t.get("q") or ""), "a": str(t.get("a") or "")} for t in th[:th.index(cur)]]
+        question = str(cur.get("q") or "")
+    return magic(root, {"nick": "2nd", "view": "book", "selection": sel, "question": question})
 
 
 # POST /api/hub/magic — 요청 파일 → (2ND 질문 노드) → queue «🪄 지시 본문 + $역할-magic 요청id»
@@ -892,7 +1117,7 @@ def magic(root, body, ft=None, ws=None, resolve=None):
     # 대상 · 역할
     n, reg = target(root, body.get("nick"))
     if n not in MAGIC:
-        raise HubError(400, f"{label(n)} 는 마법봉 없음(MAIN · INSP · 2ND 만)")
+        raise HubError(400, f"{label(n)} 는 마법봉 없음(MAIN · 2ND 만)")
     # 보기 · 선택 · 질문
     view = str(body.get("view") or "")
     sel = body.get("selection") if isinstance(body.get("selection"), dict) else {}
@@ -906,20 +1131,20 @@ def magic(root, body, ft=None, ws=None, resolve=None):
            "flowtree": str(Path(ft.__file__).resolve().parent) if ft is not None else None, "target": None}
     # 알림 덧붙임
     note = ""
-    if n == "main":
+    if view == "survey":
+        # 설문 제출(survey.py submit) — 문항 목록 · 결과 위치(답 자리 = MAIN 은 결정 문서 · 2ND 는 설명 폼)
+        sv = sel.get("survey") if isinstance(sel.get("survey"), dict) else {}
+        items = [{"id": str(x.get("id") or "")[:40], "question": str(x.get("question") or "")[:500], "kind": str(x.get("kind") or "")[:10],
+                  "text": str(x.get("text") or "")[:2000]} for x in (sel.get("items") or []) if isinstance(x, dict)][:100]
+        if not sv.get("id") or not items:
+            raise HubError(400, "설문 id · 문항 없음")
+        req["target"] = {"kind": "survey", "survey": str(sv["id"])[:40], "title": str(sv.get("title") or "")[:200],
+                         "project": str(sv.get("project") or "")[:80], "dir": str(sv.get("dir") or "")[:500],
+                         "items": items, "extra": str(sel.get("extra") or "")[:2000]}
+    elif n == "main":
         if not nodes:
             raise HubError(400, "노드를 고르지 않음 — 그래프에서 노드를 고른 뒤(Ctrl+클릭 여럿)")
         req["target"] = {"kind": "work"}
-    elif n == "insp":
-        # 트리의 종류로 한 번 더 거름(화면이 보낸 종류만 믿지 않음)
-        kinds = {}
-        if ws is not None and ws.tree_path.is_file() and ft is not None:
-            kinds = {k: v.get("kind") for k, v in ft.flowtree_store.node_map(ft.flowtree_store.read_json(ws.tree_path, {}) or {}).items()}
-        nodes = [x for x in nodes if (kinds.get(x["id"]) or x["kind"]) == "verify"]
-        if not nodes:
-            raise HubError(400, "검증 노드 없음 — 고른 것 중 검증 노드만 보냄")
-        req["nodes"] = nodes
-        req["target"] = {"kind": "verify"}
     else:
         if not question:
             raise HubError(400, "질문 없음")
@@ -928,6 +1153,12 @@ def magic(root, body, ft=None, ws=None, resolve=None):
             if not sel.get("note") or not sel.get("notes_file"):
                 raise HubError(400, "스티커 id · notes.json 없음")
             req["target"] = {"kind": "note", **{k: str(sel.get(k) or "")[:300] for k in ("note", "notes_file", "doc", "book", "ctx", "block")}}
+            if sel.get("thread"):
+                # 꼬리 질문 — 답 자리 = 그 꼬리의 a 칸 · 맥락(원 질문 · 원 답 · 앞 꼬리)
+                req["target"].update({"thread": str(sel["thread"])[:20], "orig_q": str(sel.get("orig_q") or "")[:2000],
+                                      "orig_a": str(sel.get("orig_a") or "")[:4000],
+                                      "prev": [{k: str(x.get(k) or "")[:2000] for k in ("id", "q", "a")}
+                                               for x in (sel.get("prev") or []) if isinstance(x, dict)][-20:]})
         elif view == "code" and sel.get("file"):
             # 열린 파일 — 상대 경로 · 실제 경로 · 답 자리
             rel = str(sel["file"])
@@ -963,4 +1194,4 @@ def magic(root, body, ft=None, ws=None, resolve=None):
     except HubError as e:
         raise HubError(e.status, f"{note}요청 {rid} 저장 · {e}") from None
     return {"ok": True, "id": rid, "nick": n, "label": label(n), "question": (req["target"] or {}).get("question"),
-            "msg": f"{note}{label(n)} 에 {'/' if claude else '$'}{MAGIC[n]} {rid}", "out": out}
+            "thread": reg.get("thread"), "msg": f"{note}{label(n)} 에 {'/' if claude else '$'}{MAGIC[n]} {rid}", "out": out}

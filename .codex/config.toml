@@ -23,13 +23,17 @@ fast_mode = true
 
 # 서브 V2 켜기 + 서브 기다리기 하한(유저 지정 11/04) — 10초 wait_agent 를 반복하며 깨어날 때마다 맥락 전체가 다시 들어가던 낭비(10번 리허설 MAIN 522만 토큰)를 설정으로 막는다
 # 최소 · 기본 10분 · 최대 1시간 — wait_agent 는 서브 완료 · 중간 메시지 · 유저 입력에 일찍 깨므로 길게 잡아도 기다리지 않는다
-# 깊이 · 동시 수 · 도구 숨기기는 일부러 넣지 않는다(서브의 서브가 필요할 때가 있다 — V2 는 max_depth 를 쓰지 않음)
+# 깊이 · 도구 숨기기는 일부러 넣지 않는다(서브의 서브가 필요할 때가 있다 — V2 는 max_depth 를 쓰지 않음)
 # 근거: 공식 설정 스키마 · Linux codex 0.163 --strict-config 로딩 확인(2026-11-04 Codex 조사 · 바탕 화면 codex_토큰누수_점검_결과.md 4-2)
 [features.multi_agent_v2]
 enabled = true
 min_wait_timeout_ms = 600000
 default_wait_timeout_ms = 600000
 max_wait_timeout_ms = 3600000
+
+# 서브 상한 8(유저 지정 11/04) — 없으면 기본 3 이라 넷째를 띄울 때 쉬는 서브가 앞에서부터 notLoaded 로 내려간다(0.163 실측: 7개 중 4개 내려감 · 8 이면 7개 모두 유지)
+[agents]
+max_concurrent_threads_per_session = 8
 
 [tui]
 # 창이 30분 넘게 비활성이면 모델을 불러 요약을 만든다 — 두 세션 운영 때 토큰 낭비라 끔(/recap 은 손으로 가능)

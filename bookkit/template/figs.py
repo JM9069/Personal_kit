@@ -237,7 +237,10 @@ def strip3(P):
 def orders_map(P):
     """P = {"points": {이름: (위도, 경도)}, "short": {이름: 짧은 이름}, "target": (위도, 경도), "target_label",
             "best": (순서 [이름 …], 범례 글), "worst": (순서, 범례 글), "geo": True, "label"}  → 300 × 214
-    가장 짧은 순서 = 초록 실선 · 가장 긴 순서 = 빨강 점선 · 오른쪽 끝 점의 이름은 자동으로 점 왼쪽에 둔다"""
+    가장 짧은 순서 = 초록 실선 · 가장 긴 순서 = 빨강 점선 · 오른쪽 끝 점의 이름은 자동으로 점 왼쪽에 둔다
+    P 에 "kind": "arrows" 가 있으면 측정 화살표 두 판(arrows_pair — 분석 틀 stat_model 의 가장 작은 경우)"""
+    if P.get("kind") == "arrows":
+        return arrows_pair(P)
     s = Svg(300, 214)
     pts = P["points"]
     best, worst = P["best"], P["worst"]
@@ -638,3 +641,142 @@ def pair_rows(P):
     if P.get("note"):
         s.text(332, H - 8, P["note"], size=10.5, tone="gray")
     return s.render(P.get("label", ""))
+
+
+# ════════════════════════════════════════════════════════════
+# 13. 측정 화살표 — 판 위 칸마다 잰 어긋남(벡터)을 화살표로(분석 틀 stat_model · 재생기 "kind": "quiver" · 순서 지도 "kind": "arrows")
+# ════════════════════════════════════════════════════════════
+def _arrow_v(s, x1, y1, x2, y2, col, sw=1.4):
+    """작은 화살표 — 머리 = 채운 세모(길이의 45% · 5px 까지) · 아주 짧으면 점 하나"""
+    L = math.hypot(x2 - x1, y2 - y1)
+    if L < 0.8:
+        s.parts.append(f'<circle cx="{x1:.1f}" cy="{y1:.1f}" r="1.3" fill="{col}"/>')
+        return
+    ux, uy = (x2 - x1) / L, (y2 - y1) / L
+    h = min(5.0, L * 0.45)
+    bx, by = x2 - ux * h, y2 - uy * h
+    s.parts.append(f'<line x1="{x1:.1f}" y1="{y1:.1f}" x2="{bx:.1f}" y2="{by:.1f}" stroke="{col}" stroke-width="{sw:g}"/>')
+    s.parts.append(f'<path d="M{x2:.1f} {y2:.1f} L{bx - uy * h * 0.55:.1f} {by + ux * h * 0.55:.1f} L{bx + uy * h * 0.55:.1f} {by - ux * h * 0.55:.1f} Z" fill="{col}"/>')
+
+
+def _plate(s, pl, box):
+    """판 테두리(반지름이 있으면 원) → 좌표 변환 f(y, x)"""
+    R = pl.get("radius")
+    if R:
+        bounds = (-R, R, -R, R)
+    else:
+        xs, ys = pl["x"], pl["y"]
+        dy, dx = (max(ys) - min(ys)) or 1, (max(xs) - min(xs)) or 1
+        bounds = (min(ys) - dy * 0.08, max(ys) + dy * 0.08, min(xs) - dx * 0.08, max(xs) + dx * 0.08)
+    proj = fit_box(bounds=bounds, box=box, geo=False)
+    if R:
+        cx, cy = proj(0, 0)
+        s.parts.append(f'<circle cx="{cx:.1f}" cy="{cy:.1f}" r="{proj(0, R)[0] - cx:.1f}" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.2"/>')
+    return proj
+
+
+def _arrows(s, pl, proj, dx, dy, col, limit=None):
+    """칸마다 점 + 화살표(값 × scale px · 위쪽 = +y) — limit 보다 긴 화살표는 빨강"""
+    sc = pl["scale"]
+    for x, y, a, b in zip(pl["x"], pl["y"], dx, dy):
+        px, py = proj(y, x)
+        s.parts.append(f'<circle cx="{px:.1f}" cy="{py:.1f}" r="1.6" fill="#6b7280"/>')
+        over = limit is not None and math.hypot(a, b) > limit
+        _arrow_v(s, px, py, px + a * sc, py - b * sc, "#dc2626" if over else col, 1.9 if over else 1.4)
+
+
+def quiver_map(P, st):
+    """P = 재생기 칸(kind "quiver") — "plate": {"x": […], "y": […](칸 좌표), "radius": 판 반지름(선택 — 원 테두리), "scale": 값 1 당 px, "bar": 눈금 화살표 값, "unit": 단위 글}
+            · "right_title" · "frame_title"(단계 "head" 가 없을 때 위 제목)
+       st = 단계 {"dx": […], "dy": […](칸마다 · plate 와 같은 순서), "head", "lines": [(글, 색)](오른쪽 목록 한 줄씩), "limit": 이보다 긴 화살표 빨강(선택)}  → 664 × 270
+    화살표 길이 = 값 × scale — 단계마다 같은 배율이라 성분을 뺄수록 짧아진다. 왼쪽 아래 = 눈금 화살표"""
+    s = Svg(664, 270)
+    pl = P["plate"]
+    s.text(8, 14, fit_text(st.get("head", P.get("frame_title", "")), 12, 436), size=12, anchor="start", tone="ink", bold=True)
+    s.box(6, 28, 438, 234, "", tone="gray", fill="#f8fafc", sw=1, rx=6)
+    proj = _plate(s, pl, (14, 34, 422, 206))
+    _arrows(s, pl, proj, st["dx"], st["dy"], "#2563eb", st.get("limit"))
+    bar = pl.get("bar")
+    if bar:
+        _arrow_v(s, 18, 251, 18 + bar * pl["scale"], 251, "#374151", 1.6)
+        s.text(24 + bar * pl["scale"], 251, f"{bar} {pl.get('unit', '')}", size=10, anchor="start", tone="gray")
+    s.text(456, 14, P.get("right_title", ""), size=12, anchor="start", tone="ink", bold=True)
+    for i, (t, col) in enumerate(st.get("lines", ())):
+        s.text(456, 40 + i * 22, fit_text(t, 10.5, 204), size=10.5, anchor="start", tone=col)
+    return s.render(st.get("head", P.get("frame_title", "")))
+
+
+def arrows_pair(P):
+    """P = {"kind": "arrows", "x", "y"(칸 좌표), "radius"(선택), "scale"(값 1 당 px), "unit",
+            "good": {"dx", "dy", "label"}(초록 — 가장 작은 쪽), "bad": {"dx", "dy", "label"}(빨강 — 가장 큰 쪽), "label"}  → 300 × 214
+    같은 판에서 후보 둘을 각각 뺀 화살표를 나란히 — 순서 지도(orders_map) 자리에 들어간다"""
+    s = Svg(300, 214)
+    s.box(2, 4, 296, 206, "", tone="gray", fill="#f8fafc", sw=1, rx=6)
+    for j, (key, col, tone) in enumerate((("good", "#16a34a", "ok"), ("bad", "#dc2626", "ng"))):
+        x0 = 8 + j * 146
+        proj = _plate(s, P, (x0, 12, 138, 150))
+        _arrows(s, P, proj, P[key]["dx"], P[key]["dy"], col)
+        s.line(x0 + 4, 180, x0 + 24, 180, tone=tone, sw=3)
+        s.text(x0 + 28, 180, fit_text(P[key]["label"], 10, 110), size=10, tone=tone, bold=True, anchor="start")
+    s.text(150, 199, f"화살표 = 빼고 남은 값(단위 {P.get('unit', '')})", size=10, tone="gray")
+    return s.render(P.get("label", ""))
+
+
+# ════════════════════════════════════════════════════════════
+# 14. 관리도 — 시간순으로 찍은 값 + 가운데 · 위 · 아래 한계(재생기 이어 붙이기 "kind": "chart")
+# ════════════════════════════════════════════════════════════
+def control_chart(C, k, title):
+    """C = 관리도 칸 — "points": [(x 위치, 값, 줄 번호, 한계 밖?)], "series": [줄 이름], "steps": [[이 단계에 찍는 점 번호 …]],
+            "center" · "ucl" · "lcl"(가운데 · 위 한계 · 아래 한계), "unit", "axis": (x 처음, x 끝), "ticks": [(x, 글)],
+            "words": {"line": "{mark}{name}  이탈 {out}/{n}", "ucl": "위 한계 {v}", "lcl": "아래 한계 {v}", "center": "평균 {v}"}
+       k = 단계 번호(0 부터 · len(steps) = 다 찍은 결과 — 강조 없음) · title = 위 제목  → 664 × 270
+    점 색 = 줄(figs.COLORS) · 이번 단계 점은 크게 · 한계 밖 = 빨간 고리 · 오른쪽 목록 = 줄마다 지금까지의 이탈 수"""
+    s = Svg(664, 270)
+    pts, steps = C["points"], C["steps"]
+    shown = {i for st in steps[:k + 1] for i in st}
+    cur = set(steps[k]) if k < len(steps) else set()
+    Wd = C.get("words", {})
+    x0, x1, y0, y1 = 58, 500, 40, 228
+    vals = [p[1] for p in pts] + [C["ucl"], C["lcl"]]
+    lo, hi = min(vals), max(vals)
+    pad = (hi - lo) * 0.08 or 1
+    lo, hi = lo - pad, hi + pad
+    a0, a1 = C["axis"]
+
+    def fx(i):
+        return x0 + (i - a0) / max(1e-9, a1 - a0) * (x1 - x0)
+
+    def fy(v):
+        return y1 - (v - lo) / (hi - lo) * (y1 - y0)
+
+    def g(v):
+        return f"{v:.3g}"
+
+    s.text(8, 14, fit_text(title, 12, 500), size=12, anchor="start", tone="ink", bold=True)
+    s.box(x0 - 8, y0 - 10, x1 - x0 + 16, y1 - y0 + 20, "", tone="gray", fill="#f8fafc", sw=1, rx=4)
+    for key, v, tone in (("center", C["center"], "gray"), ("ucl", C["ucl"], "ng"), ("lcl", C["lcl"], "ng")):
+        s.line(x0 - 4, fy(v), x1 + 4, fy(v), tone=tone, sw=1.3, dash=True)
+        s.text(x0 - 2, fy(v) + (9 if key == "lcl" else -7), Wd.get(key, "{v}").format(v=g(v)), size=9.5, anchor="start", tone=tone, bold=key != "center", halo=True)
+    for i, lab in C.get("ticks", ()):
+        s.line(fx(i), y1 + 10, fx(i), y1 + 14, tone="gray", sw=1)
+        s.text(fx(i), y1 + 24, lab, size=9.5, tone="gray")
+    names = C["series"]
+    for si in range(len(names)):
+        seq = sorted((pts[i][0], pts[i][1]) for i in shown if pts[i][2] == si)
+        if len(seq) > 1:
+            d = "M" + " L".join(f"{fx(a):.1f} {fy(v):.1f}" for a, v in seq)
+            s.parts.append(f'<path d="{d}" stroke="{COLORS[si % len(COLORS)]}" stroke-width="1" fill="none" opacity="0.45"/>')
+    for i in sorted(shown):
+        a, v, si, out = pts[i]
+        x, y = fx(a), fy(v)
+        s.parts.append(f'<circle cx="{x:.1f}" cy="{y:.1f}" r="{4.2 if i in cur else 2.8:g}" fill="{COLORS[si % len(COLORS)]}" stroke="#ffffff" stroke-width="0.8"/>')
+        if out:
+            s.parts.append(f'<circle cx="{x:.1f}" cy="{y:.1f}" r="7" fill="none" stroke="#dc2626" stroke-width="2"/>')
+    s.text(516, 34, "줄별 이탈", size=11, anchor="start", tone="ink", bold=True)
+    cur_s = {pts[i][2] for i in cur}
+    for si, name in enumerate(names):
+        n = sum(1 for i in shown if pts[i][2] == si)
+        o = sum(1 for i in shown if pts[i][2] == si and pts[i][3])
+        line = Wd.get("line", "{mark}{name}  이탈 {out}/{n}").format(mark="▶ " if si in cur_s else "", name=name, out=o, n=n)
+        s.text(516, 56 + si * 20, fit_text(line, 10.5, 144), size=10.5, anchor="start", tone=COLORS[si % len(COLORS)], bold=o > 0)
+    return s.render(title)

@@ -28,3 +28,4 @@ python-dotenv==1.2.4
 # 시험 — pytest-asyncio 는 NiceGUI 화면 시험(user 픽스처 = 비동기 픽스처)용
 pytest==9.2.0
 pytest-asyncio==1.4.1
+pytest-xdist==3.8.0

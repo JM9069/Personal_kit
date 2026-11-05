@@ -530,7 +530,7 @@ function openMdLink(doc, href, wiki) {
   if (wiki !== undefined) {
     const [d, hd] = wiki.split('#');
     if (!d) { doc.md.jumpHeading(hd || ''); return; }
-    emit('find-file', { name: d.toLowerCase().replace(/\.md$/, '') + '.md', heading: hd });
+    emit('find-file', { name: d.toLowerCase().replace(/\.md$/, '') + '.md', heading: hd, open: (path) => openBeside(doc, path) });
     return;
   }
   if (!href) return;
@@ -543,7 +543,56 @@ function openMdLink(doc, href, wiki) {
   const [p, hd] = href.split('#');
   const path = relTo(here, p);
   if (/\.html?$/i.test(path)) { openPage(path); return; }
-  openFile(path).then(() => { if (hd) getDoc(path)?.md?.jumpHeading(decodeURIComponent(hd)); });
+  openBeside(doc, path).then((d) => { if (d && hd) jumpTo(d, decodeURIComponent(hd)); });
+}
+
+// md 링크 대상을 옆 칸에 — 칸이 하나면 오른쪽을 펼치고, 나뉘어 있으면 그 칸을 다시 쓴다(md 는 그대로 보임). 자기 문서면 그 자리에서
+// doc: 링크가 있는 md 문서 / path: 대상 경로 / 반환: 연 문서(실패 null)
+async function openBeside(doc, path) {
+  // md 가 있는 칸 · 옆 칸
+  const home = paneOf(doc.path);
+  if (!home || path === doc.path) return openFile(path);
+  const to = otherPane(home);
+  if (paneOf(path) === home) { moveTab(path, to); return getDoc(path); }
+  showPane(to);
+  usePane(to);
+  return openFile(path);
+}
+
+// 링크 꼬리로 자리 옮기기 — #L12 줄 · CSV #row=12&col=3(row = 표 # 칸 번호 · col = 열 번호나 열 이름) · PDF #page=3 · MD 제목
+// doc: 연 문서 / frag: 풀어 쓴 꼬리(# 뒤)
+function jumpTo(doc, frag) {
+  // 꼬리 칸들
+  const q = new URLSearchParams(frag);
+  const line = /^L(\d+)$/.exec(frag);
+  if (line) reveal(doc, +line[1]);
+  else if (doc.kind === 'pdf' && q.get('page')) {
+    const f = cur.el.other.querySelector('iframe.dv-pdf');
+    if (f) f.src = `${f.src.split('#')[0]}#page=${+q.get('page')}`;
+  } else if (doc.kind === 'code' && /^(csv|tsv)$/.test(extOf(doc.path)) && q.get('row')) jumpCell(doc, +q.get('row'), q.get('col'));
+  else doc.md?.jumpHeading(frag);
+}
+
+// 표로 보기로 바꿔 그 행 · 칸으로 — 표에 안 그린 행(앞 2,000행 뒤)은 원문 줄로
+// doc: CSV 문서 / row: 표 # 칸 번호 / col: 열 번호 · 열 이름(없으면 null)
+function jumpCell(doc, row, col) {
+  tableView.add(doc.path);
+  activate(doc.path);
+  // 그 행
+  const tr = cur.el.other.querySelectorAll('.dv-table tbody tr')[row - 1];
+  if (!tr) {
+    tableView.delete(doc.path);
+    activate(doc.path);
+    reveal(doc, row + 1);
+    toast(`표에 없는 행 ${row} — 원문 ${row + 1}줄`);
+    return;
+  }
+  // 열 칸 — 열 번호(0 = # 칸이라 그대로) 또는 열 이름
+  const at = /^\d+$/.test(col || '') ? +col : [...cur.el.other.querySelectorAll('.dv-table th')].findIndex((th) => th.textContent === col);
+  const td = at > 0 ? tr.children[at] : null;
+  tr.classList.add('is-hit');
+  td?.classList.add('is-hit');
+  (td || tr).scrollIntoView({ block: 'center', inline: 'center' });
 }
 
 // 문서 기준 상대 주소 → 작업 폴더 기준 경로
@@ -600,6 +649,8 @@ export async function openFile(path, { line = null, col = 1, nav = true, focus =
     const i = tabs.indexOf(active);
     tabs.splice(i >= 0 ? i + 1 : tabs.length, 0, path);
     attachDoc(doc);
+    // CSV 는 처음부터 표로 — 줄을 찍어 여는 경우(검색 · 줄 링크)만 원문
+    if (!line && doc.kind === 'code' && /^(csv|tsv)$/.test(extOf(path))) tableView.add(path);
   }
   activate(path, { focus });
   if (line) reveal(doc, line, col);
@@ -869,7 +920,7 @@ export function paintStatus() {
     + (doc?.encoding && !doc.readonly && !VIEW_KINDS.has(doc.kind) ? `<span title="인코딩 — 원래 파일 그대로 저장">${ENC_LABEL[doc.encoding] || doc.encoding}</span>` : '')
     + (branch ? `<span class="dv-st-branch" title="현재 브랜치">${icon('branch')}${esc(branch)}</span>` : '')
     + (doc && !doc.readonly && (doc.kind === 'code' || doc.kind === 'md') ? `<span class="dv-st-save is-${st}" data-st="save" title="${st === 'failed' ? '클릭: 다시 저장' : '자동 저장'}">${STATUS_LABEL[st] || ''}</span>` : '')
-    + (doc?.kind === 'code' ? `<button class="dv-st-btn${wrap ? ' is-on' : ''}" data-st="wrap" title="긴 줄 접어 보기 (Alt+Z)">줄바꿈</button>` : '');
+    + (doc?.kind === 'code' ? `<button class="dv-st-btn${wrap ? ' is-on' : ''}" data-st="wrap" title="긴 줄 접어 보기 (Alt+Shift+Z)">줄바꿈</button>` : '');
   paintCursor();
 }
 
@@ -1174,7 +1225,7 @@ function addActions(e0) {
   const act = (id, label, keybindings, run, menu = null) => e0.addAction({ id, label, keybindings, run,
     ...(menu ? { contextMenuGroupId: menu[0], contextMenuOrder: menu[1] } : {}) });
   act('dv.save', '저장', [M.CtrlCmd | K.KeyS], () => { const d = getDoc(active); if (d) save(d, { manual: true }); });
-  act('dv.wrap', '줄바꿈 켜기/끄기', [M.Alt | K.KeyZ], () => toggleWrap());
+  act('dv.wrap', '줄바꿈 켜기/끄기', [M.Alt | M.Shift | K.KeyZ], () => toggleWrap());
   act('dv.toggleCase', '대소문자 바꾸기', [M.CtrlCmd | M.Shift | K.KeyU], (e) => {
     const m = e.getModel();
     const edits = e.getSelections().filter((s) => !s.isEmpty()).map((s) => {

@@ -92,9 +92,9 @@ envcheck 를 두 번 돌린 뒤, Codex 입력창에 한 줄씩:
 
 1. «scripts/envcheck/README.md 를 읽고 envcheck.sh --no-install 을 돌린 뒤, 내 터미널 결과(요약: …)와 비교해 샌드박스가 막는 항목을 한 줄로 정리해 줘»
 2. «python3 -m http.server 8000 --bind 0.0.0.0 을 백그라운드로 띄워 줘» → Browser 도구 PORT 8000 이 열리나 · 승인 창이 어떻게 뜨나 · 안 열리면 «권한 상승으로 다시» 를 시켜 비교
-3. «$survey 의 시험 절대로 해 줘. devview 가 안 떠 있으면 권한 상승으로 8701 에 띄워. 나는 Browser 도구 PORT 8701 → 설문 탭(Alt+8)에서 제출만 하고 채팅은 안 보낼게» → 제출 직후 Codex 가 결과를 보고하나(턴 안 대기) · devview 가 Browser 도구로 보이나(5-1 C)도 같이 확인
+3. «$survey 의 시험 절대로 해 줘. devview 가 안 떠 있으면 권한 상승으로 8701 에 띄워. 나는 Browser 도구 PORT 8701 → 설문 탭(Ctrl+Alt+2)에서 제출만 하고 채팅은 안 보낼게» → 제출 직후 Codex 가 결과를 보고하나(턴 안 대기) · devview 가 Browser 도구로 보이나(5-1 C)도 같이 확인
 4. «계획 모드에서 선택지로 물어봐» → 선택지 질문이 뜨나
-5. «이 세션 이름을 MAIN 으로 바꾸는 방법을 알려 주고, 바꾼 뒤 $ready-start 8절의 whoami.py mark → (다음 명령) find 를 해 줘» → 이름 · UUID 가 맞게 나오나 · 대회 Codex 에서 세션 이름 바꾸는 법(MAIN · INSP · 2ND 구조와 hand-on 의 전제)
+5. «이 세션 이름을 MAIN 으로 바꾸는 방법을 알려 주고, 바꾼 뒤 $ready-start 8절의 whoami.py mark → (다음 명령) find 를 해 줘» → 이름 · UUID 가 맞게 나오나 · 대회 Codex 에서 세션 이름 바꾸는 법(MAIN · 2ND 구조와 hand-on 의 전제)
 
 6. «devview 화면 캡처(우상단 카메라 · Ctrl+Alt+P)를 내가 찍을게. 찍으면 docs/captures 의 최신 PNG 를 열어서 무엇이 보이는지 말해 줘» → 캡처가 저장되고 Codex 가 그림을 읽나(7절)
 
@@ -127,7 +127,7 @@ envcheck 를 두 번 돌린 뒤, Codex 입력창에 한 줄씩:
 - 화면
 	- 코드 탭: 파일 트리(git 상태 색) · 편집기(PyCharm 색 · 키맵) · md 는 옵시디언식 라이브 미리보기(콜아웃 색 상자 포함) · CSV 표로 보기
 	- Git 탭(Alt+9): 커밋 그래프 · diff · 파일 이력(읽기 전용)
-	- 설문 탭(Alt+8): $survey 설문이 뜨는 곳 — 새 설문이 등록되면 아래 알림 · 배지만(자동으로 넘어가지 않음)
+	- 설문 탭(Ctrl+Alt+2): $survey 설문이 뜨는 곳 — 새 설문이 등록되면 아래 알림 · 배지만(자동으로 넘어가지 않음)
 	- 화면 캡처(우상단 카메라 · Ctrl+Alt+P): 지금 화면을 docs/captures/날짜_시각_보기.png 로 저장 → Codex 가 그 파일을 열어 유저 화면을 본다
 - 저장: 코드는 입력이 멈추고 1초 뒤 자동 저장 · 다른 곳(IDE 편집기 · Codex)이 먼저 고친 파일은 덮어쓰지 않고 «외부 변경 충돌» 띠
 

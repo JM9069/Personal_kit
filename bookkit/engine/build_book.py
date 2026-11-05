@@ -8,10 +8,13 @@ r"""책 빌드 — 책 폴더(META · ORDER 가 든 __init__.py + 장 파일)를
     python3 bookkit/engine/build_book.py bookkit/books/<이름> --out <경로>
     python3 bookkit/engine/build_book.py bookkit/books/<이름> --strict         → 빈 칸 · 구조 바뀜이 하나라도 있으면 실패(종료 코드 1)
     python3 bookkit/engine/build_book.py bookkit/books/<이름> --stage 1        → 1차판(1장 · 3장 · 5장 — 나머지 장 · 빈 칸은 회색 «2차판에서 채워짐»)
+    python3 bookkit/engine/build_book.py bookkit/books/<이름> --stage 1 --chapters s1,s3,s5,s4 --label 4장까지 --strict   → 중간판(이 장까지 싣는다 · 나머지 장 · 빈 칸은 회색)
     python3 bookkit/engine/build_book.py bookkit/books/<이름> --stage 2        → 2차판(전부 · --strict 와 함께 빈 칸 0)
 
 --only : 쉼표로 나눈 목록. 숫자 · 범위는 장 번호(6-10 → ch06 ~ ch10), 그 밖은 모듈 이름(pv · s1 · apx …)
          일부 빌드는 기본 출력 이름이 달라 전체 판을 덮어쓰지 않는다
+--chapters : 중간판(장이 끝날 때마다 내는 판) — --stage 1 과 함께 · 싣는 장 전체를 모듈 이름으로(META «stage1» 대신 · 순서는 ORDER 대로)
+         1차판처럼 없는 숫자 · 빈 칸이 회색이고 --strict 는 구조 바뀜만 본다 · 판 이름 = --label(없으면 «중간판») · 판 파일 · versions.json · «새로» 는 다른 판과 같다
 --stage : 판(단계별 배포). 판을 주면 첫 블록 위 · 머리글에 판 표시, 앞 판 결과(출력 옆 <doc>.blocks.json — 블록 ID · 내용 해시)와 견줘
           새로 생기거나 바뀐 블록에 «새로» 띠를 단다(사람 · AI 가 표시하지 않는다). 1차판의 --strict 는 구조 바뀜만 본다(빈 칸 0 은 2차판에서만)
 판은 덮어쓰지 않는다 : 전체 빌드는 할 때마다 N 이 하나 늘어난 새 파일(같은 판을 다시 빌드해도) — 앞 판 html 은 그대로 남는다
@@ -40,8 +43,8 @@ TEMPLATE = HERE.parent / "template"
 STRUCT_MARK = "# ══ 구조"
 
 
-def select(order, only):
-    """--only 해석 → 빌드할 모듈 이름 목록(ORDER 순서 유지)"""
+def select(order, only, flag="--only"):
+    """--only · --chapters 해석 → 모듈 이름 목록(ORDER 순서 유지)"""
     if not only:
         return list(order)
     want = set()
@@ -58,7 +61,7 @@ def select(order, only):
             want.add(tok)
     unknown = sorted(want - set(order))
     if unknown:
-        raise SystemExit(f"--only 에 모르는 이름: {unknown}\n가능한 이름: {', '.join(order)}")
+        raise SystemExit(f"{flag} 에 모르는 이름: {unknown}\n가능한 이름: {', '.join(order)}")
     return [m for m in order if m in want]
 
 
@@ -214,10 +217,12 @@ def next_version(latest, versions):
     return max(ns, default=0) + 1
 
 
-def version_name(stage, label):
-    """판 이름 — 라벨(방향을 바꾼 판) · 없으면 «N차판» · 판 없이 빌드하면 «전체»"""
+def version_name(stage, label, chapters=None):
+    """판 이름 — 라벨(방향을 바꾼 판 · 중간판) · 없으면 «중간판» · «N차판» · 판 없이 빌드하면 «전체»"""
     if label:
         return label.strip()
+    if chapters:
+        return "중간판"
     return f"{stage}차판" if stage else "전체"
 
 
@@ -228,9 +233,10 @@ def version_file(latest, n, name):
     return latest.with_name(f"{latest.stem}__v{n}_{safe}.html")
 
 
-def build(book_dir, only=None, out=None, stage=None, compat=False):
+def build(book_dir, only=None, out=None, stage=None, compat=False, chapters=None, label=None):
     """빌드 → (출력 경로, html, 통계). 쓰기는 이 함수를 __main__ 에서 부를 때만 일어난다
-    stage = None(판 없음) · 1 · 2 / compat = v3 호환(옛 블록 ID · 판 표시 · «새로» 끔)"""
+    stage = None(판 없음) · 1 · 2 / compat = v3 호환(옛 블록 ID · 판 표시 · «새로» 끔)
+    chapters = 중간판에 싣는 장(쉼표 목록 · stage 1 일 때 META «stage1» 대신) / label = 판 이름(중간판의 판 표시에 쓴다)"""
     if str(HERE) not in sys.path:
         sys.path.insert(0, str(HERE))
     from book import engine as E
@@ -248,17 +254,22 @@ def build(book_dir, only=None, out=None, stage=None, compat=False):
     bk.legacy_ids = compat
     if stage and not compat:
         bk.edition = meta.get("editions", {}).get(stage, f"{stage}차판")
+    # 1차판 · 중간판에 싣는 장(그 밖의 장은 회색 자리)
+    shown = meta.get("stage1")
+    if chapters:
+        shown = select(order, chapters, "--chapters")
+        bk.edition = f"{version_name(stage, label, shown)} · 나머지 장 준비 중"
     built, skipped = [], []
     t0 = time.perf_counter()
     # 1차판에서 «한눈에» 처럼 STYLE 을 싣는 장이 빠질 때 — 첫 빈 장이 한 번 대신 싣는다(서식 깨짐 방지)
-    style_left = kit_style(alias) if stage == 1 and "stage1" in meta else ""
+    style_left = kit_style(alias) if stage == 1 and shown is not None and "pv" not in shown else ""
     for name in mods:
         if not (book_dir / f"{name}.py").exists():
             skipped.append(name)
             continue
         t = time.perf_counter()
         n0 = len(bk.blocks)
-        if stage == 1 and "stage1" in meta and name not in meta["stage1"]:
+        if stage == 1 and shown is not None and name not in shown:
             stub(bk, name, meta, meta["env"](), style_left)
             style_left = ""
         else:
@@ -278,10 +289,14 @@ def build(book_dir, only=None, out=None, stage=None, compat=False):
     if stage and not compat and not only and prev_path(path).is_file():  # 앞 판이 있으면 «새로» 비교
         bk.prev = json.loads(prev_path(path).read_text(encoding="utf-8")).get("blocks", {})
     html, stats = bk.render(only_desc=only or "")
+    if stage == 1:  # 1차판 · 중간판 — 장 파일이 직접 적은 빈 칸(한눈에의 META 칸)도 «2차판 대기» 로(--strict 는 구조 바뀜만)
+        bk.later += bk.blanks
+        bk.blanks = []
     stats.update(built=built, skipped=skipped, seconds=time.perf_counter() - t0, warnings=bk.warnings + bk.lint() + list(dict.fromkeys(E.TABLE_WARN)),
                  blanks=list(dict.fromkeys(bk.blanks)), later=list(dict.fromkeys(bk.later)), drift=drift(book_dir), stage=stage, compared=bk.prev is not None)
     stats["format"], stats["expr"] = format_lint(bk.blocks, stage)
     stats["title"] = meta.get("short") or meta.get("title") or meta.get("doc", "")  # 판 목록(versions.json)에 싣는 책 제목
+    stats["shown"] = shown if chapters else None  # 중간판에 실은 장(판 목록에 남긴다)
     return path, html, stats
 
 
@@ -305,12 +320,15 @@ def main(argv=None):
     ap.add_argument("--strict", action="store_true", help="빈 칸 · 구조 바뀜이 있으면 실패(완성본 확인용 · 1차판은 구조 바뀜만)")
     ap.add_argument("--stage", type=int, choices=(1, 2), help="판 — 1 = 1차판(1 · 3 · 5장) · 2 = 2차판(전부)")
     ap.add_argument("--v3-compat", action="store_true", help="옛 블록 ID · 판 표시 · «새로» 끔(v3 바이트 비교용)")
-    ap.add_argument("--label", help="판 이름 — 유저가 방향을 틀어 다시 만든 판(예 «정원우선») · 파일 이름 <doc>__v<N>_<라벨>.html")
+    ap.add_argument("--label", help="판 이름 — 유저가 방향을 틀어 다시 만든 판(예 «정원우선») · 중간판(예 «4장까지») · 파일 이름 <doc>__v<N>_<라벨>.html")
+    ap.add_argument("--chapters", help="중간판에 싣는 장 전체(--stage 1 과 함께): s1,s3,s5,s4 — 나머지 장 · 빈 칸은 회색")
     a = ap.parse_args(argv)
+    if a.chapters and (a.stage != 1 or a.only or a.v3_compat):
+        ap.error("--chapters 는 --stage 1 과 함께만 쓴다(--only · --v3-compat 과 같이 못 쓴다)")
     sys.path.insert(0, str(HERE))
     from book.engine import BuildError
     try:
-        path, html, st = build(a.book, a.only, a.out, a.stage, a.v3_compat)
+        path, html, st = build(a.book, a.only, a.out, a.stage, a.v3_compat, a.chapters, a.label)
     except BuildError as e:
         print("빌드 실패 —", e)
         return 1
@@ -320,11 +338,11 @@ def main(argv=None):
     if versioned:
         versions = load_versions(path)
         n = next_version(path, versions)
-        name = version_name(a.stage, a.label)
+        name = version_name(a.stage, a.label, st["shown"])
         vfile = version_file(path, n, name)
         vfile.write_text(html, encoding="utf-8")
         shutil.copyfile(vfile, path)
-        versions.append({"n": n, "name": name, "label": (a.label or "").strip(), "stage": a.stage, "file": vfile.name,
+        versions.append({"n": n, "name": name, "label": (a.label or "").strip(), "stage": a.stage, "chapters": st["shown"], "file": vfile.name,
                          "at": time.strftime("%Y-%m-%d %H:%M:%S"), "blocks": st["blocks"], "blanks": len(st["blanks"]),
                          "new": len(st["new"]) if a.stage and st["compared"] else None, "base": versions[-1]["n"] if versions else None})
         versions_path(path).write_text(json.dumps({"doc": path.stem, "title": st["title"], "latest": vfile.name, "versions": versions}, ensure_ascii=False, indent=1),

@@ -47,7 +47,7 @@ CONTENT_TYPES = {
 # 유저 칸 허용 키 → 값 종류
 #   seen = 노드 id → 유저가 확인한 결과 기록 번호(seq) · questions · collapsed 는 옛 형식(받기만 하고 화면은 안 씀)
 USER_KEYS = {"version": int, "picks": dict, "verify": dict, "questions": list, "edges": list,
-             "nodes": list, "positions": dict, "collapsed": list, "seen": dict, "updated": str}
+             "nodes": list, "positions": dict, "collapsed": list, "seen": dict, "updated": str, "screen": int}
 # 요청 본문 최대 크기(바이트)
 MAX_BODY = 2 * 1024 * 1024
 # 코드 원문 응답 최대 크기(바이트)
@@ -148,6 +148,7 @@ class Workspace:
     # 화면용 데이터 묶음
     def data(self):
         self.ensure_scan()
+        flowtree_store.ensure_frames(self.tree_path)
         # 세 파일 내용
         tree = flowtree_store.read_json(self.tree_path, {}) or {}
         auto = flowtree_store.read_json(self.auto_path)
@@ -161,7 +162,7 @@ class Workspace:
             "meta": {"tree_path": str(self.tree_path), "code_root": str(root), "root": str(self.root),
                      "missing": None if self.tree_path.exists() else str(self.tree_path),
                      "code_rel": self.rel_to_root(root), "docs": tree_check.resolve_docs(tree, self.root),
-                     "file_types": self.file_types(tree)},
+                     "file_types": self.file_types(tree), "screens": flowtree_store.SCREENS},
         }
 
     # 키트 폴더 — AGENTS.md 가 있는 작업 폴더(프로젝트 루트부터 위로 git 루트까지 처음 만난 곳 · 없으면 None)

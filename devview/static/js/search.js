@@ -9,10 +9,10 @@ import { getDoc, textOf } from './docs.js';
 export function initSearch() {
   on('find-usages', (word) => findInFiles({ q: word, word: true, case: true }));
   on('structure', () => structure());
-  on('find-file', ({ name, heading }) => {
+  on('find-file', ({ name, heading, open }) => {
     const hit = allFiles().find((p) => baseName(p).toLowerCase() === name);
     if (!hit) { toast(`문서 없음: ${name}`); return; }
-    openFile(hit).then(() => { if (heading) getDoc(hit)?.md?.jumpHeading(heading); });
+    (open || openFile)(hit).then(() => { if (heading) getDoc(hit)?.md?.jumpHeading(heading); });
   });
 }
 
@@ -262,7 +262,7 @@ export function findInFiles(init = {}) {
 // ======= 단축키 도움말 =======
 const KEYS = [
   ['파일', [['Shift 두 번 · Ctrl+P', '파일 찾기 («이름:줄» 로 줄까지)'], ['Ctrl+E', '최근 파일'], ['Ctrl+Shift+F', '파일 내용 검색'],
-    ['Alt+1', '파일 트리 보이기/숨기기'], ['Alt+F1', '열린 파일을 트리에서 찾기'], ['Alt+← / Alt+→', '이전/다음 탭'], ['가운데 클릭', '탭 닫기']]],
+    ['Alt+Shift+1', '파일 트리 보이기/숨기기'], ['Alt+F1', '열린 파일을 트리에서 찾기'], ['Alt+← / Alt+→', '이전/다음 탭'], ['가운데 클릭', '탭 닫기']]],
   ['편집 (PyCharm 키맵)', [['Ctrl+/', '줄 주석 켜기/끄기'], ['Ctrl+Shift+/', '블록 주석'], ['Tab · Shift+Tab', '들여쓰기 · 내어쓰기'],
     ['Enter', '«:» 뒤 자동 들여쓰기 · return/pass 뒤 내어쓰기'], ['Ctrl+D', '줄 복제'], ['Ctrl+Shift+D', '줄 삭제'],
     ['Alt+Shift+↑↓', '줄 옮기기'], ['Shift+Enter', '아래에 새 줄'], ['Ctrl+Shift+J', '줄 합치기'], ['Ctrl+Shift+U', '대소문자 바꾸기'],
@@ -273,17 +273,18 @@ const KEYS = [
     ['Ctrl+Alt+Shift+C', '«경로:줄» 복사'], ['Ctrl+Shift+A · F1(편집기)', '명령 목록'], ['Ctrl+휠', '글자 크기']]],
   ['Git 탭', [['Alt+9', 'Git 탭 · 코드 탭 오가기'], ['↑ ↓', '커밋 이동'], ['Enter · →', '바뀐 파일 목록으로'], ['F7 · Shift+F7', '다음/이전 변경 부분'],
     ['Ctrl+F', '커밋 검색 (메시지 · 해시 · 작성자)']]],
-  ['그래프', [['Alt+Q', '그래프 탭 ↔ 코드 탭 (처음 화면 = 그래프 · 그래프 안에서도)'],
+  ['그래프', [['Alt+` · Alt+1~8 · Alt+0', '그래프 Main · 섹션1~8 · 섹션0 화면으로 (어느 보기에서든 · 입력 칸 · 책 안에서도)'], ['Alt+Q', 'MAIN 마법봉 — 그래프에서 고른 노드로 (어느 보기에서든 · 그래프 · 편집기 · 책 안에서도)'],
+    ['Alt+W', '2ND 마법봉 — 지금 화면의 선택으로 (그래프 · 코드 · Git · 설문 · 앱 · 책은 고른 메모)'],
     ['` (입력 칸 밖)', '고른 노드의 연결 내용 — 파일 · 문서는 오른쪽 절반에 열고 앵커 줄로 · 모듈은 모듈 설명'], ['` · Esc · ×', '연결 내용 닫기']]],
   ['Book', [['Alt+B', 'Book 탭(북키트 책 목록 · 보기) ↔ 코드 탭']]],
-  ['설문 · 캡처', [['Alt+8', '설문 탭 · 코드 탭 오가기'], ['Ctrl+Alt+P', '화면 캡처 → docs/captures/ (팝업이 떠 있어도)']]],
+  ['설문 · 캡처', [['Ctrl+Alt+P', '화면 캡처 → docs/captures/ (팝업이 떠 있어도)']]],
   ['문서 바로 가기 (예비 키도 같이 켜 둠)', [['Ctrl+Alt+1', '결정 · 인수인계 문서 docs/hand_off.md'],
     ['Ctrl+Alt+2', '설문 탭'], ['Ctrl+Alt+3', '데이터 지도 docs/ONTOLOGY.md'],
     ['Ctrl+Space · Ctrl+Shift+Space · Ctrl+Alt+4', '앱 탭 ↔ 직전 보기']]],
   ['대화', [['Alt+A · S · D · F · G', '대화 보기 1~5번 세션 탭 (어느 보기에서든 · 한글 자판도 같음)'], ['Alt+← / →', '대화 보기 안에서 옆 세션 탭'],
     ['Ctrl+Enter', '보내기 (Enter 는 줄바꿈)'], ['🤖 · 접힘 줄 클릭', '답변 하나 접기 · 펴기'], ['Ctrl+Shift+, · Ctrl+Shift+.', '답변 전부 접기 · 전부 펴기']]],
   ['앱 화면 · 기호', [['Ctrl+Space', '앱 탭 ↔ 직전 보기 — 과제 앱 서버(PORT 칸 · 기본 3000)를 이 안에서(코드 편집기 자동 완성 대신)'], ['Alt+.', '기호 팔레트 — 마지막 입력 칸의 커서 자리에 넣음(코드 · md · Git · 설문)'], ['Esc', '기호 팔레트 닫기'],
-    ['Ctrl+` · Alt+`', '🚹 · ❇️ (입력 칸에 커서가 있을 때 — 아래도 같음)'], ['Alt+1 · Alt+2 · Alt+3', '🔎 · 💭 · 📌 (칸 밖의 Alt+1 은 파일 트리)'],
+    ['Ctrl+` · Alt+Z', '🚹 · ❇️ (입력 칸에 커서가 있을 때 — 아래도 같음)'], ['Alt+X · Alt+C · Alt+V', '🔎 · 💭 · 📌'],
     ['Ctrl+Q', '❓'], ['Ctrl+1 · 2 · 3', '🔴 · 🟠 · 🟢'], ['Ctrl+. · Ctrl+,', '→ · ←']]],
 ];
 export function showHelp() {

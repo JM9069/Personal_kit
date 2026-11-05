@@ -72,21 +72,21 @@ def test_register_effort_from_rollout(world, capsys):
 def test_register_effort_order(world, capsys, monkeypatch):
     write_rollout(world["home"], None)
     monkeypatch.setattr(hub, "process_effort", lambda: "xhigh")
-    run(capsys, "register", "--nick", "insp", "--effort", "low")
-    d = json.loads((world["work"] / ".codex-hub" / "sessions" / "insp.json").read_text(encoding="utf-8"))
+    run(capsys, "register", "--nick", "2nd", "--effort", "low")
+    d = json.loads((world["work"] / ".codex-hub" / "sessions" / "2nd.json").read_text(encoding="utf-8"))
     assert (d["effort"], d["effort_src"]) == ("xhigh", "프로세스")
     monkeypatch.setattr(hub, "process_effort", lambda: None)
-    run(capsys, "register", "--nick", "insp", "--effort", "low")
-    d = json.loads((world["work"] / ".codex-hub" / "sessions" / "insp.json").read_text(encoding="utf-8"))
+    run(capsys, "register", "--nick", "2nd", "--effort", "low")
+    d = json.loads((world["work"] / ".codex-hub" / "sessions" / "2nd.json").read_text(encoding="utf-8"))
     assert (d["effort"], d["effort_src"]) == ("low", "인자")
     (world["home"] / "config.toml").write_text('model = "x"\nmodel_reasoning_effort = "medium"\n[tui]\nmodel_reasoning_effort = "high"\n',
                                                encoding="utf-8")
-    run(capsys, "register", "--nick", "insp")
-    d = json.loads((world["work"] / ".codex-hub" / "sessions" / "insp.json").read_text(encoding="utf-8"))
+    run(capsys, "register", "--nick", "2nd")
+    d = json.loads((world["work"] / ".codex-hub" / "sessions" / "2nd.json").read_text(encoding="utf-8"))
     assert (d["effort"], d["effort_src"]) == ("medium", "설정")
     (world["home"] / "config.toml").unlink()
-    run(capsys, "register", "--nick", "insp")
-    d = json.loads((world["work"] / ".codex-hub" / "sessions" / "insp.json").read_text(encoding="utf-8"))
+    run(capsys, "register", "--nick", "2nd")
+    d = json.loads((world["work"] / ".codex-hub" / "sessions" / "2nd.json").read_text(encoding="utf-8"))
     assert (d["effort"], d["effort_src"]) == ("?", "?")
 
 
@@ -213,22 +213,22 @@ def fake_codex(tmp_path, monkeypatch):
 
 def test_send_prefix_and_target(world, capsys, fake_codex):
     run(capsys, "register", "--nick", "main")
-    (world["work"] / ".codex-hub" / "sessions" / "insp.json").write_text(json.dumps({"nick": "insp", "thread": "th-insp"}), encoding="utf-8")
+    (world["work"] / ".codex-hub" / "sessions" / "2nd.json").write_text(json.dumps({"nick": "2nd", "thread": "th-2nd"}), encoding="utf-8")
     text = '기호 $HOME "따옴표" -- --message=가짜\n둘째 줄'
-    code, out, err = run(capsys, "send", "--to", "INSP", text)
+    code, out, err = run(capsys, "send", "--to", "2ND", text)
     args = json.loads(fake_codex.read_text(encoding="utf-8").splitlines()[-1])
-    assert code == 0 and out.startswith("보냄: main → insp") and "Queued" in out, (out, err)
+    assert code == 0 and out.startswith("보냄: main → 2nd") and "Queued" in out, (out, err)
     # 받는 세션 thread · 글 앞 «@main » · 셸 없이 그대로
-    assert args == ["queue", "--thread", "th-insp", f"--message=@main {text}"]
+    assert args == ["queue", "--thread", "th-2nd", f"--message=@main {text}"]
 
 
 def test_send_failures(world, capsys, fake_codex, monkeypatch):
     # 보낸 세션 등록 없음 → «등록 안 됨»
-    code, _, err = run(capsys, "send", "--to", "insp", "x")
+    code, _, err = run(capsys, "send", "--to", "2nd", "x")
     assert code == 1 and "등록 안 됨" in err
     run(capsys, "register", "--nick", "main")
-    code, _, err = run(capsys, "send", "--to", "insp", "x")
-    assert code == 1 and "«insp» 등록 없음" in err
+    code, _, err = run(capsys, "send", "--to", "2nd", "x")
+    assert code == 1 and "«2nd» 등록 없음" in err
     (world["work"] / ".codex-hub" / "sessions" / "bad.json").write_text(json.dumps({"nick": "bad", "thread": "fail-thread"}), encoding="utf-8")
     code, _, err = run(capsys, "send", "--to", "bad", "x")
     assert code == 1 and "종료코드 3" in err and "no session" in err
@@ -305,20 +305,20 @@ def test_register_claude_session_from_process(world, claude, capsys, monkeypatch
 def test_register_claude_outside_tmux_and_fallback(world, claude, capsys, monkeypatch):
     # tmux 밖 — 읽기만(경고) · 프로세스 기록 없음 → 작업 폴더 projects 의 최근 jsonl
     monkeypatch.setattr(hub, "my_claude", lambda: None)
-    code, out, _ = run(capsys, "register", "--nick", "insp", "--claude")
-    d = json.loads((world["work"] / ".codex-hub" / "sessions" / "insp.json").read_text(encoding="utf-8"))
+    code, out, _ = run(capsys, "register", "--nick", "2nd", "--claude")
+    d = json.loads((world["work"] / ".codex-hub" / "sessions" / "2nd.json").read_text(encoding="utf-8"))
     assert code == 0 and "tmux 밖" in out and d["tmux"] is None and d["thread"] == CSID
 
 
 def test_send_to_claude_by_tmux(world, claude, capsys, fake_tmux):
-    # 보낸 쪽 = Claude main · 받는 쪽 = Claude insp(tmux %5 · 소켓)
+    # 보낸 쪽 = Claude main · 받는 쪽 = Claude 2nd(tmux %5 · 소켓)
     run(capsys, "register", "--nick", "main", "--claude")
-    (world["work"] / ".codex-hub" / "sessions" / "insp.json").write_text(
-        json.dumps({"nick": "insp", "kind": "claude", "thread": "c-insp", "tmux": "%5", "tmux_socket": "/tmp/s"}), encoding="utf-8")
+    (world["work"] / ".codex-hub" / "sessions" / "2nd.json").write_text(
+        json.dumps({"nick": "2nd", "kind": "claude", "thread": "c-2nd", "tmux": "%5", "tmux_socket": "/tmp/s"}), encoding="utf-8")
     text = '첫 줄 $HOME "따옴표" `x`\n둘째 줄'
-    code, out, err = run(capsys, "send", "--to", "insp", text)
+    code, out, err = run(capsys, "send", "--to", "2nd", text)
     calls = [json.loads(x) for x in fake_tmux.read_text(encoding="utf-8").splitlines()]
-    assert code == 0 and out.startswith("보냄: main → insp · tmux %5"), (out, err)
+    assert code == 0 and out.startswith("보냄: main → 2nd · tmux %5"), (out, err)
     assert [c[0][2] for c in calls] == ["display-message", "load-buffer", "paste-buffer", "send-keys"]
     assert all(c[0][:2] == ["-S", "/tmp/s"] for c in calls)
     # 글은 셸 없이 표준 입력으로(괄호 붙여넣기 -p) · 끝에 Enter

@@ -4,8 +4,8 @@
 #   왜: 대회 Codex 는 맥락 창이 작아 압축이 잦다 — 압축마다 역할 스킬을 통째로 다시 읽으면 토큰 · 시간이 샌다(10/31 실전)
 #       10/30 판(PreCompact 스냅숏 + «$hand-on 하라» 안내)은 문서를 더 읽게 해 작업이 늘었다 → 11/01 참조 목록만으로 바꿈
 #   절 제목은 스킬 · 문서 파일의 제목 줄에서 그때그때 뽑는다(지어내지 않게 · 파일이 바뀌어도 따라가게) — 못 찾으면 번호만
-#   역할 판별(ready-start/whoami.py 함수 재사용): 세션 이름(/rename MAIN 등) → 대화 기록의 첫 유저 메시지($main / $insp / $2nd · $ready-start 준비 세션은 역할 없음)
-#             못 하면 세 역할 줄을 다 넣고 «내 역할 줄만»
+#   역할 판별(ready-start/whoami.py 함수 재사용): 세션 이름(/rename MAIN 등) → 대화 기록의 첫 유저 메시지($main / $2nd · $ready-start 준비 세션은 역할 없음)
+#             못 하면 두 역할 줄을 다 넣고 «내 역할 줄만»
 # 입력: stdin JSON — hook_event_name · source · session_id · transcript_path · cwd
 # SessionStart(compact) 밖의 이벤트 · 깨진 입력 → 출력 없이 종료코드 0(훅 실패로 Codex 를 막지 않는다)
 # 시험: python3 -m pytest -q .agents/skills/hand-on
@@ -26,7 +26,7 @@ SKILL_SHOWN = "~/.codex/skills/X/SKILL.md"
 # 역할마다 «언제 → 어느 파일 · 어느 절» — 파일은 스킬 이름 또는 키트 기준 docs/ 경로
 REFS = {
     "MAIN": [
-        ("흐름 · 섹션 지시", "main", ["1-1", "1-2", "1-3", "1-4", "1-5", "1-6"]),
+        ("흐름 · 섹션 지시 · 서브 운영", "main", ["1-1", "1-2", "1-3", "1-4", "1-5", "1-6", "1-7"]),
         ("지도", "ontology", ["1", "2"]),
         ("검증 · 보고", "main", ["3-2", "3-4", "3-5"]),
         ("코드", "docs/CODE_RULE.md", ["5", "7", "11", "13"]),
@@ -36,15 +36,6 @@ REFS = {
         ("그래프", "docs/flowtree.md", []),
         ("책", "bookkit/README.md", []),
         ("뼈대", "skeleton/README.md", []),
-    ],
-    "INSP": [
-        ("운영 · 단위", "insp", ["1-2", "1-3", "1-4"]),
-        ("검증 지시 · 리뷰", "insp", ["2-1", "2-2", "2-3", "3"]),
-        ("판정 규칙", "main", ["3-2", "3-5", "3-6"]),
-        ("검증 기준", "docs/CODE_RULE.md", ["13"]),
-        ("검증 기록 쓰기", "docs/DOC_GUIDE.md", ["3"]),
-        ("결정", "docs/hand_off.md", []),
-        ("그래프", "docs/flowtree.md", []),
     ],
     "2ND": [
         ("운영 · 할 일", "2nd", ["1-3", "2-1", "2-2"]),

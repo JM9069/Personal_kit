@@ -82,10 +82,9 @@ sup.fm2::before{content:",";margin-right:1px}
 .sheet b{font-weight:700}
 .sheet b.bad{color:var(--ng)}
 .sheet b.good{color:var(--ok)}
-/* 단계별 배포 — 회색 «2차판에서 채워짐» 자리 · 판 표시 · «새로» 띠(빌드가 앞 판과 견줘 data-new 를 단다) */
+/* 단계별 배포 — 회색 «2차판에서 채워짐» 자리 · 판 표시 · «새로» 왼쪽 빨간 세로 막대(빌드가 앞 판과 견줘 data-new 를 단다 · 글자표는 본문을 가려서 없앰) */
 .sheet b.later{color:#8a94a3;font-weight:600;background:#eef1f5;border:1px dashed #c3cad4;border-radius:4px;padding:0 .3em}
 .edtag{display:inline-block;margin:0 0 .5em;padding:1px 9px;font-size:12px;font-weight:700;color:#475569;background:#eef2f7;border:1px solid #cbd5e1;border-radius:4px}
-.blk[data-new]::before{content:"새로";position:absolute;right:0;top:0;z-index:2;font-size:10.5px;font-weight:700;line-height:1.5;color:#fff;background:#dc2626;border-radius:0 0 0 4px;padding:0 5px;pointer-events:none}
 .blk[data-new]{background:linear-gradient(90deg,#fca5a5 0 3px,transparent 3px)}
 .sheet code{font-family:var(--mono);font-size:.9em;background:#eef1f5;border-radius:.25em;padding:0 .25em;color:#1e293b}
 .sheet a{color:var(--acc)}
@@ -280,6 +279,35 @@ a.ix{text-decoration:none;text-align:right;white-space:nowrap;color:var(--acc);f
 #spMake{width:min(100%, calc((100vh - 2 * var(--gut)) * 1600 / 1131));margin:12px auto 90px}
 @supports (height:100dvh){#spMake{width:min(100%, calc((100dvh - 2 * var(--gut)) * 1600 / 1131))}}
 
+/* ── 아래 질문 줄 — 답 달린 스티커(지금 펼친 쪽 것만) · 행 = «Q1. 제목» · 누르면 질문 · 답 · 꼬리 질문 ── */
+#spQa{width:min(100%, calc((100vh - 2 * var(--gut)) * 1600 / 1131));margin:12px auto 0}
+@supports (height:100dvh){#spQa{width:min(100%, calc((100dvh - 2 * var(--gut)) * 1600 / 1131))}}
+#spQa .mkb{padding-right:64px}  /* 오른쪽 아래 떠 있는 단추 줄에 가리지 않게 */
+.book.m2>.qa1{display:none}
+.book.m1>.qa1{width:min(100%, 880px);margin-bottom:18px}
+.qr{border-top:1px solid var(--rail-line)}
+.qr:first-child{border-top:0}
+.qrh{display:flex;gap:.4em;width:100%;text-align:left;border:0;background:transparent;color:var(--ui);font:inherit;font-size:14px;font-weight:600;
+  padding:8px 2px;cursor:pointer;white-space:normal;overflow-wrap:anywhere}
+.qrh::before{content:"▸";flex:0 0 1em;color:var(--muted)}
+.qr.open>.qrh::before{content:"▾"}
+.qrb{display:none;padding:0 2px 12px 1.4em;font-size:14px;line-height:1.55}
+.qr.open>.qrb{display:block}
+.qx{margin:6px 0;white-space:pre-wrap;overflow-wrap:anywhere}
+.qx b{display:block;font-size:12px;color:var(--muted);margin-bottom:2px}
+.qx.qan{background:#ecfdf3;border:1px solid #86efac;border-radius:6px;padding:6px 9px;color:#14532d}
+.qx.qan b{color:#15803d}
+.qt{border-left:3px solid var(--rail-line);padding-left:10px;margin:10px 0}
+.qwait{color:var(--muted);font-size:12px;margin:4px 0}
+.qf{display:flex;gap:6px;align-items:flex-end;margin-top:10px}
+.qf textarea{flex:1 1 auto;min-width:0;min-height:56px;resize:vertical;border:1px solid var(--rail-line);border-radius:6px;background:var(--paper);color:var(--ink);
+  font:inherit;font-size:14px;padding:6px 8px}
+.qf button{flex:0 0 auto;border:1px solid var(--rail-line);background:var(--paper);border-radius:6px;font-size:16px;padding:4px 10px;cursor:pointer}
+.qf button.qdel{font-size:13px;color:var(--muted)}
+.qe{margin:4px 0 0;font-size:12px;color:var(--ng)}
+.qe.ok{color:var(--ok)}
+.qr.flash,.qt.flash{animation:flash 1.8s ease-out}
+
 /* ── 오른쪽 세로 목록 ── */
 .rail{flex:0 0 var(--rail-w);height:100vh;height:100dvh;overflow-y:auto;background:var(--rail);border-left:1px solid var(--rail-line);padding:10px 12px 100px}
 body.norail .rail{display:none}
@@ -345,9 +373,6 @@ body.memo-mode .page{cursor:crosshair}
 .note .ne{padding:0 10px 6px;font-size:12px;color:#b91c1c;margin:0}
 .note .ne.ok{color:#15803d}
 .note .nf button.nw{padding:3px 8px}
-/* 스티커 답(2ND 서브가 bookkit/notes.py answer 로 단다) — 질문 아래 초록 칸 */
-.note .na{margin:0 8px 6px;padding:6px 9px;background:#ecfdf3;border:1px solid #86efac;border-radius:6px;color:#14532d;white-space:pre-wrap;overflow-wrap:anywhere;overflow:auto;max-height:60%}
-.note .na b{display:block;font-size:12px;color:#15803d;margin-bottom:2px}
 
 /* ── API 책 블록(engine_api.py) — HTTP 메시지 해부도 · 서버 코드 묶음 · 책 사이 연결고리 ── */
 .hmw2{margin:.8em 0 .9em}

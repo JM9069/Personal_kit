@@ -61,10 +61,12 @@ function ensureFrame() {
   frame.title = '그래프';
   frame.src = 'ft/';
   $('#ftView').appendChild(frame);
-  // 같은 주소라 안 문서에 키 처리기(Alt+Q · 기호 · 팔레트)를 붙일 수 있음 — 새로 읽을 때마다 다시
+  // 같은 주소라 안 문서에 키 처리기(마법봉 Alt+Q · W · 기호 · 팔레트)를 붙일 수 있음 — 새로 읽을 때마다 다시
   frame.addEventListener('load', () => {
     try { deps.watchFocus(frame.contentDocument); } catch { /* 다른 주소 */ }
     loaded = true;
+    // 읽기 전에 미뤄 둔 메시지(알림 종 focus 등)
+    for (const m of queued.splice(0)) frame.contentWindow?.postMessage(m, '*');
     // 읽기 전에 미뤄 둔 포커스 — 그사이 유저가 다른 곳을 눌렀으면 건드리지 않음
     if (wantFocus && deps.view() === 'graph' && [document.body, frame].includes(document.activeElement)) focusNow();
     wantFocus = false;
@@ -122,12 +124,22 @@ export function closeSplit(tell = true, relayout = true) {
   if (relayout && deps.view() === 'graph') setTimeout(() => { frame?.focus(); frame?.contentWindow?.focus(); }, 0);
 }
 
-// 그래프 iframe 에 포커스 — Alt+Q 로 그래프에 왔을 때 바로 노드 키(` · 1 · 2)가 먹게
+// 그래프 iframe 에 포커스 — 그래프 보기로 왔을 때 바로 노드 키(` · 1 · 2)가 먹게
 //   다 읽히기 전이면 읽은 뒤로 미룸 — 읽는 중인 iframe 에 포커스를 주면 그사이 누른 키(Alt+D 등)가 어디에도 안 감
 export function focusFlow() {
   if (!frame) return;
   if (!loaded) { wantFocus = true; return; }
   setTimeout(focusNow, 0);
+}
+
+// 그래프 iframe 에 메시지 — 아직 안 읽혔으면 읽은 뒤 보냄(알림 종 → {ft:'focus', node, screen?})
+// m: 메시지 / 반환: 그래프 화면이 있는지
+const queued = [];
+export function flowPost(m) {
+  if (!available) return false;
+  ensureFrame();
+  if (loaded) frame.contentWindow?.postMessage(m, '*'); else queued.push(m);
+  return true;
 }
 
 // 시험 · 디버깅용 — 지금 연결 문서

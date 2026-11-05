@@ -388,7 +388,9 @@ def check_figures(figs, R, where):
         R.e(where, "dict 여야 한다 — {그림 이름: 칸}")
         return
     for name, P in figs.items():
-        if name in FIG_KEYS:
+        if name == "순서_지도" and isinstance(P, dict) and P.get("kind") == "arrows":  # 측정 화살표 두 판(분석 틀 stat_model)
+            need(R, P, ["x", "y", "scale", "good", "bad"], f"{where}.{name}")
+        elif name in FIG_KEYS:
             need(R, P, FIG_KEYS[name], f"{where}.{name}")
     R.counts["그림"] = R.counts.get("그림", 0) + len(figs)
 
@@ -433,6 +435,13 @@ def check_players(P, R):
     for name in P:
         if name not in ("채우기", "고치기", "이어붙이기"):
             R.e(f"players.{name}", "이름은 채우기 · 고치기 · 이어붙이기 중 하나")
+    # 측정 화살표(kind quiver) · 관리도(kind chart) — 분석 틀 stat_model · 지도 · 시간표 칸 대신(본 것은 사본에서 빼 아래 지도 · 시간표 검사를 건너뛴다)
+    P = dict(P)
+    for name in ("채우기", "고치기"):
+        if isinstance(P.get(name), dict) and P[name].get("kind") == "quiver":
+            check_quiver(R, P.pop(name), f"players.{name}", name)
+    if isinstance(P.get("이어붙이기"), dict) and P["이어붙이기"].get("kind") == "chart":
+        check_chart(R, P.pop("이어붙이기"))
     f = P.get("채우기")
     if f is not None and need(R, f, ["title", "task", "map", "frame_title", "right_title", "words", "steps"], "players.채우기"):
         check_map(R, f["map"], "players.채우기.map")
@@ -486,6 +495,42 @@ def check_players(P, R):
             if used > T.get("rows", 10):
                 R.w("players.이어붙이기.timetable.rows", f"쓴 차 {used}대가 줄 수 {T.get('rows', 10)} 보다 많다 — 넘는 차는 안 보인다(rows 를 늘린다 · 16 까지 권장)")
         R.counts["이어 붙이기 단계"] = len(c.get("heads", [])) - 1
+
+
+def check_quiver(R, q, where, name):
+    """측정 화살표 재생기(kind quiver) — 판 칸 · 단계마다 칸 수만큼 dx · dy"""
+    if need(R, q, ["title", "task", "plate", "right_title", "steps"], where) and need(R, q["plate"], ["x", "y", "scale"], f"{where}.plate"):
+        n = len(q["plate"]["x"])
+        if len(q["plate"]["y"]) != n:
+            R.e(f"{where}.plate", f"x {n}개 · y {len(q['plate']['y'])}개 — 칸 수가 같아야 한다")
+        for i, st in enumerate(q["steps"]):
+            w = f"{where}.steps[{i}]"
+            if need(R, st, ["dx", "dy", "text"], w) and (len(st["dx"]) != n or len(st["dy"]) != n):
+                R.e(w, f"dx {len(st['dx'])} · dy {len(st['dy'])} — 판 칸 수 {n} 와 같아야 한다")
+        check_table(R, q.get("table"), f"{where}.table", 8, steps=q["steps"])
+        R.counts[f"{name} 단계"] = len(q["steps"])
+
+
+def check_chart(R, c):
+    """관리도 재생기(kind chart) — 점 · 단계 · 한계 · heads/texts 개수"""
+    w = "players.이어붙이기"
+    if need(R, c, ["title", "task", "chart", "heads", "texts"], w) and need(R, c["chart"], ["points", "series", "steps", "center", "ucl", "lcl", "axis"], f"{w}.chart"):
+        Ch = c["chart"]
+        n = len(Ch["steps"])
+        if len(c["heads"]) != n + 1 or len(c["texts"]) != n + 1:
+            R.e(w, f"heads · texts 는 단계 수 + 1 = {n + 1}개(지금 {len(c['heads'])} · {len(c['texts'])})")
+        for i, p in enumerate(Ch["points"]):
+            if not (isinstance(p, list) and len(p) == 4 and isinstance(p[2], int) and 0 <= p[2] < len(Ch["series"])):
+                R.e(f"{w}.chart.points[{i}]", "[x 위치, 값, 줄 번호(series 범위 안), 한계 밖?] 이어야 한다")
+                break
+        for i, st in enumerate(Ch["steps"]):
+            if not all(isinstance(j, int) and 0 <= j < len(Ch["points"]) for j in st):
+                R.e(f"{w}.chart.steps[{i}]", "점 번호(points 범위 안) 목록이어야 한다")
+        if not Ch["lcl"] <= Ch["center"] <= Ch["ucl"]:
+            R.e(f"{w}.chart", "아래 한계 ≤ 가운데 ≤ 위 한계 여야 한다")
+        if len(Ch["series"]) > 8:
+            R.w(f"{w}.chart.series", f"줄 {len(Ch['series'])}개 — 8개 넘으면 색 · 오른쪽 목록이 넘친다")
+        R.counts["관리도 단계"] = n
 
 
 def check_table(R, t, where, max_rows, steps=None):
@@ -556,7 +601,15 @@ def render(docs, R):
         P = {k: K.revive(v) for k, v in (d.get("players") or {}).items()}
         for kind, p in P.items():
             try:
-                if kind in ("채우기", "고치기"):
+                if p.get("kind") == "quiver":  # 측정 화살표(분석 틀 stat_model)
+                    for st in p["steps"]:
+                        figs.quiver_map(p, st)
+                        n += 1
+                elif p.get("kind") == "chart":  # 관리도
+                    for k in range(len(p["chart"]["steps"]) + 1):
+                        figs.control_chart(p["chart"], k, p["heads"][k])
+                        n += 1
+                elif kind in ("채우기", "고치기"):
                     for st in p["steps"]:
                         hl = set(st.get("hl", ())) if kind == "고치기" else {st.get("cur")}
                         lines = kit.vehicle_lines(st["state"], hl, p)

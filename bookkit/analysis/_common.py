@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """분석 틀 공용 — 과제 폴더 찾기 · 거리 · 재생기 칸 만들기(채우기 · 고치기 · 이어 붙이기) · 전부 세기 실측 · 그림 칸 · steps.json 쓰기
 
-- 과제와 무관하다. 유형별 틀(route_bundle · dispatch_sim · schedule_assign)이 불러 쓴다
+- 과제와 무관하다. 유형별 틀(route_bundle · dispatch_sim · schedule_assign · coverage_place · stat_model)이 불러 쓴다
 - 표준 라이브러리만 쓴다(대회 리눅스에서 바로 돈다). 계산이 무거우면 이 틀을 복사한 그 책의 work/ 에서 pandas 등을 더 쓴다
 - 만든 칸 모양은 양식 kit.stepper_* · figs.* 의 칸과 같다(json 으로 — 짝 = 목록 · 함수 = 표). 형식: bookkit/contracts/README.md
 """

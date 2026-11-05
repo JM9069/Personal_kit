@@ -32,7 +32,7 @@ def transcript(tmp_path, first):
     if first:
         lines.append(msg("user", first))
     lines += [msg("assistant", "준비됨"), json.dumps({"type": "compacted", "payload": {"message": "요약"}}),
-              msg("user", "$insp 이건 나중 메시지라 판별에 안 쓴다")]
+              msg("user", "$2nd 이건 나중 메시지라 판별에 안 쓴다")]
     p.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return p
 
@@ -48,8 +48,8 @@ def compact_ev(tp, cwd=KIT, sid="s1"):
             "transcript_path": str(tp) if tp else None, "cwd": str(cwd)}
 
 
-# ======= 네 경우 — 첫 메시지 $main / $insp / $2nd / 역할 프롬프트 없음(뒤 메시지의 $insp 는 안 본다) =======
-@pytest.mark.parametrize("first, role", [("$main", "MAIN"), ("$insp 검증 대기", "INSP"), ("$2nd", "2ND"), ("과제 README 읽어 줘", None)])
+# ======= 세 경우 — 첫 메시지 $main / $2nd / 역할 프롬프트 없음(뒤 메시지의 $2nd 는 안 본다) =======
+@pytest.mark.parametrize("first, role", [("$main", "MAIN"), ("$2nd 파악시작", "2ND"), ("과제 README 읽어 줘", None)])
 def test_compact_reference_list(tmp_path, first, role):
     r = run(compact_ev(transcript(tmp_path, first)), tmp_path / "codex")
     assert r.returncode == 0, r.stderr
@@ -68,17 +68,17 @@ def test_compact_reference_list(tmp_path, first, role):
         assert f"스킬 {role.lower()} " in ctx
     else:
         assert "역할 못 정함" in ctx and "내 역할 줄만" in ctx
-        assert [h for h in heads if h.endswith(":")] == ["MAIN:", "INSP:", "2ND:"]
+        assert [h for h in heads if h.endswith(":")] == ["MAIN:", "2ND:"]
 
 
 # ======= 세션 이름(/rename)이 있으면 첫 메시지보다 먼저 =======
 def test_role_by_session_name(tmp_path):
     home = tmp_path / "codex"
     home.mkdir()
-    (home / "session_index.jsonl").write_text(json.dumps({"id": "s9", "thread_name": "INSP",
+    (home / "session_index.jsonl").write_text(json.dumps({"id": "s9", "thread_name": "2ND",
                                                           "updated_at": "2026-11-01T00:00:00Z"}) + "\n", encoding="utf-8")
     r = run(compact_ev(transcript(tmp_path, "$main"), sid="s9"), home)
-    assert "내 역할 = INSP(세션 이름 INSP)" in json.loads(r.stdout)["hookSpecificOutput"]["additionalContext"]
+    assert "내 역할 = 2ND(세션 이름 2ND)" in json.loads(r.stdout)["hookSpecificOutput"]["additionalContext"]
 
 
 # ======= 루트에서 뜬 세션(cwd = 루트 · 키트는 그 아래 kit/) → 키트 경로 =======

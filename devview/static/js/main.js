@@ -8,10 +8,11 @@ import { initTree, load as loadTree, reveal } from './tree.js';
 import { initSearch, quickOpen, recentFiles, findInFiles, structure, showHelp } from './search.js';
 import { initGit, gitSelection } from './git.js';
 import { popupOpen } from './popup.js';
-import { initFlow, flowLayout, focusFlow, flowState, flowSelection } from './flow.js';
-import { initHub, hubDebug } from './hub.js';
+import { initFlow, flowLayout, focusFlow, flowState, flowSelection, flowPost } from './flow.js';
+import { initHub, hubDebug, hubWand } from './hub.js';
 import { initChat, chatDebug } from './chat.js';
-import { initBook, bookDebug } from './book.js';
+import { initBook, bookDebug, bookWand } from './book.js';
+import { initNotify, notifyDebug } from './notify.js';
 
 // Monaco 0.52 내부 비동기 경쟁 두 가지 — 다음 그리기에서 저절로 맞춰지는 무해한 거부라 이 둘만 조용히 처리
 //   1. 같은 단어 강조(occurrencesHighlight): 모델 교체 때 대기 작업 취소 → «Canceled»(VS Code 도 취소 오류는 무시)
@@ -76,6 +77,8 @@ async function boot() {
   initHub(info, { view: () => view, codeSel: selectionInfo, markCode: markRange, clearMark, gitSel: gitSelection, ftSel: flowSelection });
   initChat(info, { view: () => view });
   initBook(info);
+  // 알림 종(모든 보기 좌하단 · 끌어서 옮김) — 서버에 notify.py 가 있을 때만
+  initNotify(info, { showView, openFile, view: () => view });
   await initTree({ name: info.name, openFile });
   if (repo) await loadStatus();
   await restoreTabs();
@@ -90,7 +93,7 @@ async function boot() {
   document.documentElement.dataset.ready = '1';
   // 시험 · 디버깅용
   window.devview = { openFile, activePath, editor, monaco, showView, info, flowState, view: () => view,
-    hub: hubDebug, chat: chatDebug, book: bookDebug, flowSelection, selectionInfo, markCount };
+    hub: hubDebug, chat: chatDebug, book: bookDebug, notify: notifyDebug, flowSelection, selectionInfo, markCount };
 }
 
 async function restoreTabs() {
@@ -127,7 +130,7 @@ function initSurvey() {
       const b = $('#svBadge');
       b.hidden = !e.data.pending;
       b.textContent = e.data.pending;
-    } else if (e.data.sv === 'focus' && view !== 'survey') toast('새 설문 — Alt+S', '', 6000);
+    } else if (e.data.sv === 'focus' && view !== 'survey') toast('새 설문 — Ctrl+Alt+2', '', 6000);
   });
   // 새로고침 때 같은 설문으로 다시 가지 않게 주소의 설문 값은 지움
   if (sp.has('sv')) history.replaceState(null, '', location.pathname);
@@ -208,8 +211,8 @@ function initApp() {
 const SYMS = ['🚹', '❇️', '🔎', '💭', '📌', '❓', '🤖', '🔴', '🟠', '🟢', '⭐', '✅', '❌',
   '→', '←', '↑', '↓', '●', '○', '△', '·', '«', '»', '—', '※'];
 // 기호 단축키 — 유저 PC 의 개인 단축키(AHK)와 같은 조합. 키 자리(e.code)로 봐서 한글 입력 중에도 같게
-//   Ctrl+` 🚹 · Alt+` ❇️ · Alt+1 🔎 · Alt+2 💭 · Alt+3 📌 · Ctrl+Q ❓ · Ctrl+1 · 2 · 3 🔴 🟠 🟢 · Ctrl+. → · Ctrl+, ←
-const SYM_KEYS = { 'c:Backquote': '🚹', 'a:Backquote': '❇️', 'a:Digit1': '🔎', 'a:Digit2': '💭', 'a:Digit3': '📌', 'c:KeyQ': '❓',
+//   Ctrl+` 🚹 · Alt+Z ❇️ · Alt+X 🔎 · Alt+C 💭 · Alt+V 📌 · Ctrl+Q ❓(Alt+` · 0~8 은 그래프 화면 이동 — 2026-11-05) · Ctrl+1 · 2 · 3 🔴 🟠 🟢 · Ctrl+. → · Ctrl+, ←
+const SYM_KEYS = { 'c:Backquote': '🚹', 'a:KeyZ': '❇️', 'a:KeyX': '🔎', 'a:KeyC': '💭', 'a:KeyV': '📌', 'c:KeyQ': '❓',
   'c:Digit1': '🔴', 'c:Digit2': '🟠', 'c:Digit3': '🟢', 'c:Period': '→', 'c:Comma': '←' };
 function symKey(e) {
   if (e.shiftKey || e.metaKey || e.ctrlKey === e.altKey) return null;
@@ -230,25 +233,22 @@ function watchFocus(doc) {
     // iframe(그래프 · 설문 · 앱) 안 Esc 도 허브에 알림 — 행 선택 해제(그쪽 Esc 동작은 그대로)
     if (e.key === 'Escape' && doc !== document) emit('escape');
     if (e.key === 'Escape' && !$('#palette').hidden) { e.preventDefault(); e.stopPropagation(); togglePalette(false); return; }
-    // 그래프 ↔ 코드 — Alt+Q(비어 있던 조합 · 키 자리라 한글 입력 중에도 같음) · 그래프 iframe 안에서도
-    if (e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey && e.code === 'KeyQ') {
+    // Book(Alt+B) · 마법봉(WAND_KEYS) — 키 자리라 한글 입력 중에도 같음 · 그래프 · 설문 iframe 안에서도(책 안은 book.js 가 넘김)
+    if (e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey && (e.code === 'KeyB' || WAND_KEYS[e.code])) {
       e.preventDefault(); e.stopPropagation();
-      if (view === 'graph') {
-        showView('code');
-        // 숨은 iframe 에 포커스가 남으면 키가 어디에도 안 감 — devview 문서로
-        if (document.activeElement?.tagName === 'IFRAME') document.activeElement.blur();
-        window.focus();
-      } else showView('graph');
+      hotKey(e.code);
       return;
     }
-    // Book 보기 — Alt+B(키 자리라 한글 입력 중에도 같음 · 그래프 · 설문 iframe 안에서도) · 다시 누르면 코드
-    if (e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey && e.code === 'KeyB') {
+    // 그래프 화면 바로 가기 — Alt+` = Main · Alt+1~8 = 섹션1~8 · Alt+0 = 섹션0(어느 보기 · iframe 안에서도 · 입력 칸 안에서도)
+    if (e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey && e.code in SCREEN_KEYS) {
       e.preventDefault(); e.stopPropagation();
-      if (view === 'book') {
-        showView('code');
-        if (document.activeElement?.tagName === 'IFRAME') document.activeElement.blur();
-        window.focus();
-      } else showView('book');
+      if (!popupOpen()) hotKey(e.code);
+      return;
+    }
+    // 파일 트리 — Alt+Shift+1(Alt+1 은 그래프 섹션1 · 그래프 iframe 안에서도 받게 여기서)
+    if (e.altKey && e.shiftKey && !e.ctrlKey && !e.metaKey && e.code === 'Digit1') {
+      e.preventDefault(); e.stopPropagation();
+      if (!popupOpen()) { if (view !== 'code') showView('code'); toggleTree(); }
       return;
     }
     // 문서 바로 가기 · 앱 탭 — 브라우저 · OS 가 먼저 가져가는 키가 있을 수 있어 예비 키를 같이 켜 둔다(키 자리 e.code 라 한글 입력 중에도 같음)
@@ -269,7 +269,7 @@ function watchFocus(doc) {
       showView(view === 'app' ? prevView : 'app');
       return;
     }
-    // 입력 칸에 커서가 있을 때만 — 밖에서는 원래 단축키(Alt+1 = 파일 트리 등) 그대로
+    // 입력 칸에 커서가 있을 때만 — 밖에서는 원래 단축키 그대로
     const sym = symKey(e);
     if (sym && editable(doc.activeElement)) {
       e.preventDefault(); e.stopPropagation();
@@ -277,14 +277,43 @@ function watchFocus(doc) {
       insertSym(sym);
     }
   }, true);
-  // 설문 화면 안에서도 Alt+. (팔레트) · Alt+8 · 9 (보기 전환) — iframe 안 키는 devview 로 안 올라와서 여기서 받음
+  // 설문 화면 안에서도 Alt+. (팔레트) · Alt+9 (Git 보기 전환) — iframe 안 키는 devview 로 안 올라와서 여기서 받음
   if (doc !== document) doc.addEventListener('keydown', (e) => {
     if (!e.altKey || e.ctrlKey || e.metaKey) return;
-    const to = { 8: 'survey', 9: 'git' }[e.key];
+    const to = { 9: 'git' }[e.key];
     if (e.key === '.') { e.preventDefault(); togglePalette(); }
     else if (to) { e.preventDefault(); showView(view === to ? 'code' : to); }
   });
 }
+// 마법봉 단축키 — 키 자리 → 허브 역할. 그 화면의 선택으로 마법봉 단추를 누른 것과 같다
+const WAND_KEYS = { KeyQ: 'main', KeyW: '2nd' };
+// 그래프 화면 단축키 — 키 자리 → flowtree 화면(null = Main · 0~8 = 섹션)
+const SCREEN_KEYS = { Backquote: null, Digit0: 0, Digit1: 1, Digit2: 2, Digit3: 3, Digit4: 4, Digit5: 5, Digit6: 6, Digit7: 7, Digit8: 8 };
+// 보기 · 마법봉 단축키 실행 — 이 문서 키 처리와 책 iframe(hot-key)이 같이 씀
+// code: 키 자리
+function hotKey(code) {
+  if (code in SCREEN_KEYS) {
+    // 그래프 보기로 가서 그 화면 — 숨은 iframe(책 등)에 포커스가 남으면 다음 키가 어디에도 안 감
+    if (view !== 'graph') showView('graph');
+    if (document.activeElement?.tagName === 'IFRAME' && document.activeElement.closest('#ftView') === null) document.activeElement.blur();
+    flowPost({ ft: 'screen', screen: SCREEN_KEYS[code] });
+    return;
+  }
+  const role = WAND_KEYS[code];
+  if (role) {
+    if (role === '2nd' && view === 'book') bookWand(); else hubWand(role);
+    return;
+  }
+  // Book — 이미 거기면 코드로
+  const to = 'book';
+  if (view === to) {
+    showView('code');
+    // 숨은 iframe 에 포커스가 남으면 키가 어디에도 안 감 — devview 문서로
+    if (document.activeElement?.tagName === 'IFRAME') document.activeElement.blur();
+    window.focus();
+  } else showView(to);
+}
+on('hot-key', hotKey);
 // 대화 세션 바로 가기 키 자리 — 순서 = 세션 탭 1~5번
 const SES_KEYS = ['KeyA', 'KeyS', 'KeyD', 'KeyF', 'KeyG'];
 // 바로 가기 키 → 갈 곳(hand_off.md · survey · ONTOLOGY.md · app) 또는 null
@@ -571,9 +600,7 @@ function initKeys() {
     if (ctrl && !e.shiftKey && !e.altKey && low === 'p') { stop(); quickOpen(); return; }
     if (ctrl && !e.shiftKey && !e.altKey && low === 'e') { stop(); recentFiles(); return; }
     if (ctrl && e.shiftKey && !e.altKey && low === 'f') { stop(); findInFiles(selectionText()); return; }
-    if (e.altKey && !ctrl && k === '1') { stop(); if (view !== 'code') showView('code'); toggleTree(); return; }
     if (e.altKey && !ctrl && k === '9') { stop(); showView(view === 'git' ? 'code' : 'git'); return; }
-    if (e.altKey && !ctrl && k === '8' && survey) { stop(); showView(view === 'survey' ? 'code' : 'survey'); return; }
     if (e.altKey && !ctrl && !e.shiftKey && k === '.') { stop(); togglePalette(); return; }
     if (e.altKey && !ctrl && k === 'F1') { stop(); if (activePath()) reveal(activePath()); return; }
     if (ctrl && k === 'F12' && !inMonaco()) { stop(); structure(); return; }

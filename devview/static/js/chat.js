@@ -5,6 +5,7 @@
 import { api } from './api.js';
 import { $, esc, on, store, toast } from './util.js';
 import { hubRows, rowState, markSeen, ctxText, EFFORT } from './hub.js';
+import { makeMovable } from './drag.js';
 
 // 대화 갱신 간격(ms)
 const POLL_MS = 1500;
@@ -35,13 +36,30 @@ export function initChat(info, d) {
   view.innerHTML = `
     <div class="dv-chat">
       <div class="dv-chat-tabs" role="tablist"></div>
-      <div class="dv-chat-list" tabindex="0"></div>
+      <div class="dv-chat-mid">
+        <div class="dv-chat-list" tabindex="0"></div>
+        <div class="dv-subs" hidden>
+          <div class="dv-subs-head"><span class="dv-subs-sum"></span><button type="button" class="dv-subs-fold"></button></div>
+          <div class="dv-subs-list"></div>
+        </div>
+      </div>
       <div class="dv-chat-foot">
         <textarea class="dv-chat-input" spellcheck="false" placeholder="보낼 글 — Enter 줄바꿈 · 보내기 Ctrl+Enter"></textarea>
         <div class="dv-chat-meta"></div>
       </div>
     </div>`;
-  el = { tabs: $('.dv-chat-tabs', view), list: $('.dv-chat-list', view), ta: $('.dv-chat-input', view), meta: $('.dv-chat-meta', view) };
+  el = { tabs: $('.dv-chat-tabs', view), list: $('.dv-chat-list', view), ta: $('.dv-chat-input', view), meta: $('.dv-chat-meta', view),
+    subs: $('.dv-subs', view), subSum: $('.dv-subs-sum', view), subFold: $('.dv-subs-fold', view), subList: $('.dv-subs-list', view) };
+  subsFolded = store.get('chat.subsFolded', false);
+  // 머리줄을 끌어 옮김(대화 글을 가리면 비키게) · 머리줄 더블클릭 = 기본 자리
+  subsMove = makeMovable(el.subs, $('.dv-subs-head', view), 'chat.subsPos');
+  el.subFold.addEventListener('mousedown', (e) => e.preventDefault());
+  el.subFold.addEventListener('click', () => {
+    subsFolded = !subsFolded;
+    store.set('chat.subsFolded', subsFolded);
+    paintSubFold();
+  });
+  paintSubFold();
   el.tabs.addEventListener('mousedown', (e) => e.preventDefault());
   el.tabs.addEventListener('click', (e) => {
     // 누른 탭
@@ -120,6 +138,8 @@ function select(nick) {
   ackIfVisible();
   render(true);
   load();
+  paintSubs([]);
+  loadSubs();
 }
 
 // Alt+←→ — 옆 세션 탭으로
@@ -150,6 +170,7 @@ function start() {
   clearTimeout(timer);
   const loop = async () => {
     await load();
+    await loadSubs();
     timer = setTimeout(loop, document.hidden ? 4000 : POLL_MS);
   };
   loop();
@@ -189,6 +210,51 @@ async function load() {
 // 다음 받을 번호(마지막 항목 i + 1)
 // have: 받은 목록
 const r0 = (have) => (have.length ? have[have.length - 1].i + 1 : 0);
+
+// ======= 서브 상태 패널 — 대화 오른쪽 아래 · 고른 세션의 서브만 · 보기 전용 =======
+// 접힘 여부 · 지금 그려진 내용(같으면 다시 안 그림 — 패널 스크롤 · 툴팁 유지)
+let subsFolded = false;
+// 패널 끌어 옮기기
+let subsMove = null;
+let subsKey = '';
+
+// 받아서 그리기 — 받는 사이 탭을 바꿨으면 버림 · 실패하면 패널을 숨김
+async function loadSubs() {
+  if (!cur) { paintSubs([]); return; }
+  // 받는 세션
+  const nick = cur;
+  try {
+    const r = await api('hub/subagents', { query: { nick } });
+    if (nick === cur) paintSubs(r.subs || []);
+  } catch {
+    if (nick === cur) paintSubs([]);
+  }
+}
+
+// 패널 그리기 — 서브가 없으면 숨김
+// list: 서브 줄 목록
+function paintSubs(list) {
+  const key = JSON.stringify(list);
+  if (key === subsKey) return;
+  subsKey = key;
+  el.subs.hidden = !list.length;
+  if (list.length) subsMove.apply();
+  el.subSum.textContent = `서브 ${list.length} · 일함 ${list.filter((s) => s.state === 'work').length}`;
+  el.subList.innerHTML = list.map((s) => {
+    // 표시 — 일함 · 쉼 · 중단
+    const st = s.state === 'work' ? ['is-work', '일함'] : s.stopped ? ['is-stop', '중단'] : ['is-rest', '쉼'];
+    const tip = [`${s.name}${s.nickname ? ` (${s.nickname})` : ''} · ${st[1]}${s.at ? ` · ${s.at}` : ''}`, s.text, s.why && s.why !== s.text ? s.why : ''].filter(Boolean).join('\n');
+    return `<div class="dv-sub ${st[0]}" data-sub="${esc(s.id || '')}" title="${esc(tip)}"><span class="dv-sub-name">${esc(String(s.name).replace(/^\/root\//, ''))}</span>`
+      + `<span class="dv-sub-mark">${st[1]}</span><span class="dv-sub-text">${esc(s.text)}</span></div>`;
+  }).join('');
+}
+
+// 접기 단추 · 목록 보임 반영
+function paintSubFold() {
+  el.subs.classList.toggle('is-folded', subsFolded);
+  el.subFold.textContent = subsFolded ? '▴' : '▾';
+  el.subFold.title = subsFolded ? '펼치기' : '접기';
+}
 
 // ======= 답변 마크다운 — 대부분의 md 서식(제목 6단계 · 굵게(빨강 강조) · 기울임 · 취소선 · 코드 · 링크 · 인용 · 목록 · 할 일 · 표 · 구분선 · 코드 블록) =======
 // 글을 먼저 이스케이프한 뒤 모양만 태그로 바꾼다(답변 속 HTML 은 글자 그대로 — 주입 없음)

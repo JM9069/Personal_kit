@@ -31,15 +31,16 @@ def test_write_from_root_finds_kit(tmp_path):
     text = (kit / "ReadyStart.md").read_text(encoding="utf-8")
     lines = text.splitlines()
     codex = [l for l in lines if l.startswith("codex ")]
-    # 세 세션 · 순서 · 강도 · 끝의 시작 메시지(작은따옴표)
+    # 두 세션 · 순서 · 강도 · 끝의 시작 메시지(작은따옴표)
     # 2ND 는 «$2nd 파악시작» 으로 뜬다(허브 → 가볍게 훑기) · whoami 는 시작 메시지 앞부분 «$2nd» 로 찾는다
-    assert [l.split(" --approve-for-me ", 1)[1] for l in codex] == ["'$main'", "'$insp'", "'$2nd 파악시작'"]
-    assert ["effort=high" in codex[0], "effort=high" in codex[1], "effort=medium" in codex[2]] == [True] * 3
+    assert [l.split(" --approve-for-me ", 1)[1] for l in codex] == ["'$main'", "'$2nd 파악시작'"]
+    assert ["effort=high" in codex[0], "effort=medium" in codex[1]] == [True] * 2
     for l in codex:
         # 경로는 셸 따옴표가 붙을 수 있다(윈도우 경로의 \ 등) — shlex.quote 한 모양으로 비교
         assert f"-C {shlex.quote(str(kit))}" in l and f"--add-dir {shlex.quote(str(root.resolve()))}" in l and "--approve-for-me" in l
         assert "-c model_verbosity=high -c service_tier=fast" in l
         assert l.count("features.multi_agent_v2.") == 4 and "min_wait_timeout_ms=600000" in l
+        assert "-c agents.max_concurrent_threads_per_session=8" in l
         assert "max_wait_timeout_ms=3600000" in l
     # devview 줄이 맨 앞 · 훅 설치가 그 줄에 · 준비 상태 절이 맨 아래
     first = next(i for i, l in enumerate(lines) if "devview/dv" in l.replace("\\", "/"))  # 윈도우에서 돌리면 \ 경로

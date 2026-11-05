@@ -4,7 +4,7 @@
     py -3 tests/test_hub.py --api-only   API 만(브라우저 없이 · WSL python3 에서도)
     CC_HEADED=1 py -3 tests/test_hub.py  창을 띄워 눈으로 보기
 
-시험 재료: 시험 안에서 만드는 작은 가상 그래프(TREE · 일반 이름) → 작업 폴더/docs/flowtree/tree.json · 작은 app · .codex-hub 등록(main · insp · 2nd + 추가 4)
+시험 재료: 시험 안에서 만드는 작은 가상 그래프(TREE · 일반 이름) → 작업 폴더/docs/flowtree/tree.json · 작은 app · .codex-hub 등록(main · 2nd + 추가 5)
 rollout 모양은 2026-11-02 WSL Codex 0.163(데몬 0.166) 실측 기록에서 칸 이름을 본떴다 — item_completed UserMessage · phase final_answer
 · turn_attribution.turn_trigger(queue) · <environment_context> · <skill> 주입 · task_complete.error
 실제 ~/.codex · ~/.devview · 8701 무관(서버의 HOME · USERPROFILE · CODEX_HOME 을 임시 폴더로) · queue 는 가짜 codex(인자를 파일에 적음)
@@ -50,7 +50,7 @@ SHOTS = HERE / "shots"
 HEADED = os.environ.get("CC_HEADED") == "1"
 RESULTS = []
 # 세션 id
-TH = {"main": "019a0000-0000-7000-8000-00000000aaaa", "insp": "019a0000-0000-7000-8000-00000000bbbb",
+TH = {"main": "019a0000-0000-7000-8000-00000000aaaa", "aux": "019a0000-0000-7000-8000-00000000bbbb",
       "2nd": "019a0000-0000-7000-8000-00000000cccc"}
 # 기준 시각(에포크 초)
 T0 = time.time() - 120
@@ -148,7 +148,7 @@ def make_world(base):
     # 허브 등록
     hub = root / ".codex-hub"
     regs = {"main": dict(thread=TH["main"], effort="?", effort_src="?", status=LONG_STATUS),
-            "insp": dict(thread=TH["insp"], effort="medium", effort_src="인자", status="확인 : 검증 v1"),
+            "aux": dict(thread=TH["aux"], effort="medium", effort_src="인자", status="확인 : 검증 v1"),
             "2nd": dict(thread=TH["2nd"], effort="?", effort_src="?", status="답변 : 왜 판 번호?"),   # effort 없음 → 모델 기본값(low)
             "doc1": dict(thread="019a-doc1", effort="high", effort_src="인자", status="추가 세션 1"),
             "doc2": dict(thread="019a-doc2", effort="xhigh", effort_src="인자", status="추가 세션 2"),
@@ -179,7 +179,7 @@ def make_world(base):
         umsg(T0 + 12, "<skill>\n<name>codex-hub</name>\n본문\n</skill>"),
         ev(T0 + 13, "event_msg", {"type": "token_count", "info": {"last_token_usage": {"total_tokens": 154000}, "model_context_window": 258000}}),
     ])
-    ro["insp"] = write_rollout(home, TH["insp"], [
+    ro["aux"] = write_rollout(home, TH["aux"], [
         ev(T0 + 1, "event_msg", {"type": "task_started", "turn_id": "i1", "model_context_window": 1000,
                                  "turn_attribution": {"turn_trigger": "queue"}}),
         umsg(T0 + 2, "<environment_context>x</environment_context>"), umsg(T0 + 3, "검증 해 줘"),
@@ -296,15 +296,15 @@ def test_api(w, base):
     code, d = http(base + "/api/hub")
     rows = d.get("rows") or []
     nicks = [r["nick"] for r in rows]
-    check("/api/hub 행 순서 — 기본 3 + 추가(등록 순)", nicks == ["main", "insp", "2nd", "doc1", "doc2", "doc3", "bad"], nicks)
+    check("/api/hub 행 순서 — 기본 2(MAIN · 2ND · INSP 행 없음) + 추가(등록 순)", nicks == ["main", "2nd", "aux", "doc1", "doc2", "doc3", "bad"], nicks)
     m = rows[0] if rows else {}
     check("MAIN 작업 중 · effort 기록 high · 맥락 154k/258k", m.get("state") == "working" and m.get("effort") == "high"
           and m.get("effort_src") == "기록" and m.get("context", {}).get("used") == 154000 and m.get("context", {}).get("window") == 258000,
           (m.get("state"), m.get("effort"), m.get("context")))
-    i = rows[1] if len(rows) > 1 else {}
-    check("INSP 대기 · 마지막 턴 id · effort 등록값 medium", i.get("state") == "idle" and (i.get("done") or {}).get("id") == "i1"
+    i = rows[2] if len(rows) > 2 else {}
+    check("aux 대기 · 마지막 턴 id · effort 등록값 medium", i.get("state") == "idle" and (i.get("done") or {}).get("id") == "i1"
           and i.get("effort") == "medium" and not (i.get("done") or {}).get("error"), (i.get("state"), i.get("done"), i.get("effort")))
-    s = rows[2] if len(rows) > 2 else {}
+    s = rows[1] if len(rows) > 1 else {}
     check("2ND 오류 — task_complete.error 글", "시험 오류" in str((s.get("done") or {}).get("error")), s.get("done"))
     check("2ND effort 기록 · 등록 없음 → 모델 기본값 low(기본값)", s.get("effort") == "low" and s.get("effort_src") == "기본값",
           (s.get("effort"), s.get("effort_src")))
@@ -327,9 +327,9 @@ def test_api(w, base):
     check("대화 — queue 로 들어온 글 표시(via)", items and items[-1].get("via") == "queue", items[-1:] and items[-1].get("via"))
     code, d2 = http(base + f"/api/hub/chat?nick=main&after={d.get('total')}")
     check("대화 after=N — 새 항목만(0개)", code == 200 and d2.get("items") == [] and d2.get("total") == d.get("total"), d2)
-    code, d = http(base + "/api/hub/chat?nick=insp")
+    code, d = http(base + "/api/hub/chat?nick=aux")
     roles = [(x["role"], x["text"]) for x in d.get("items") or []]
-    check("대화(insp, 옛 판) — 유저 역할 글 · 턴 끝 답", roles == [("user", "검증 해 줘"), ("assistant", "검증 끝 — 통과")], roles)
+    check("대화(aux, 옛 판) — 유저 역할 글 · 턴 끝 답", roles == [("user", "검증 해 줘"), ("assistant", "검증 끝 — 통과")], roles)
     code, d = http(base + "/api/hub/chat?nick=2nd")
     check("대화(2nd) — 오류 항목", [x["role"] for x in d.get("items") or []] == ["user", "error"], d.get("items"))
     code, d = http(base + "/api/hub/chat?nick=doc2")
@@ -384,16 +384,26 @@ def test_api(w, base):
           and f"\n이름 바뀜: calc.py · 세배 → calc.py · 세_배 — 코드 · 시험 · 문서도 새 이름으로 바꾸고 funcs-ack {ftid}\n" in msg, (code, d, msg))
     check("요청 파일 — tree · flowtree 경로 · root", req.get("tree", "").endswith("tree.json") and Path(req.get("flowtree") or "x").is_dir()
           and req.get("root"), (req.get("tree"), req.get("flowtree")))
-    code, d = http(base + "/api/hub/magic", {"nick": "insp", "view": "graph", "selection": {
-        "nodes": [{"id": "t1", "kind": "task"}, {"id": "v3", "kind": "verify"}, {"id": "v1", "kind": "task"}]}})
+    # main 마법봉 — 작업 · 검증 · 질문 세 종류를 한 요청으로(MAIN 이 종류로 서브에게 나눈다)
+    qid = fs.apply(w["tree"], "user", "ask", text="왜 이렇게?", target="t1")["id"]
+    code, d = http(base + "/api/hub/magic", {"nick": "main", "view": "graph", "selection": {
+        "nodes": [{"id": "t1", "kind": "task"}, {"id": "v3", "kind": "verify"}, {"id": "v1", "kind": "task"}, {"id": qid, "kind": "question"}]}})
     req = request_file(w, d["id"]) if d.get("id") else {}
-    check("insp 마법봉 — 검증 노드만(트리 종류로 다시 거름: v1 은 화면이 task 라 해도 verify)",
-          code == 200 and [x["id"] for x in req.get("nodes", [])] == ["v3", "v1"], (code, d, req.get("nodes")))
+    check("main 마법봉 — 작업 · 검증 · 질문 노드 전부 요청에",
+          code == 200 and [x["id"] for x in req.get("nodes", [])] == ["t1", "v3", "v1", qid], (code, d, req.get("nodes")))
     msg = queued(w)[-1][-1]
-    check("insp 마법봉 queue — 🪄 · 검증 노드마다 «확인해 줘» · 끝 줄 $insp-magic", msg.startswith("--message=🪄 검증 노드 ‹")
-          and msg.count("확인해 줘") == 2 and "(v3)" in msg and msg.endswith(f"\n$insp-magic {d.get('id')}"), msg)
-    code, d = http(base + "/api/hub/magic", {"nick": "insp", "view": "graph", "selection": {"nodes": [{"id": "t1", "kind": "task"}]}})
-    check("insp 마법봉 — 검증 노드 0개면 400(안 보냄)", code == 400 and "검증 노드 없음" in d.get("error", ""), (code, d))
+    check("main 마법봉 queue — 작업 «구현해 줘» · 검증 «확인해 줘»(트리 종류로: v1 은 화면이 task 라 해도 verify) · 질문 «답해 줘» · 끝 줄 $main-magic",
+          msg.count("구현해 줘") == 1 and msg.count("확인해 줘") == 2 and "(v3)" in msg and f"질문 노드 ‹왜 이렇게?›({qid}) 답해 줘" in msg
+          and msg.endswith(f"\n$main-magic {d.get('id')}"), msg)
+    code, d = http(base + "/api/hub/magic", {"nick": "main", "view": "graph", "selection": {"nodes": [{"id": "v3", "kind": "verify"}]}})
+    msg = queued(w)[-1][-1]
+    check("main 마법봉 — 검증 노드만 보내도 됨", code == 200 and msg.startswith("--message=🪄 검증 노드 ‹") and "구현해 줘" not in msg, (code, msg))
+    code, d = http(base + "/api/hub/magic", {"nick": "main", "view": "graph", "selection": {"nodes": [{"id": qid, "kind": "question"}]}})
+    msg = queued(w)[-1][-1]
+    check("main 마법봉 — 질문 노드만 보내도 됨", code == 200 and msg.startswith("--message=🪄 질문 노드 ‹") and msg.endswith(f"\n$main-magic {d.get('id')}"), (code, msg))
+    n0 = len(queued(w))
+    code, d = http(base + "/api/hub/magic", {"nick": "insp", "view": "graph", "selection": {"nodes": [{"id": "v3", "kind": "verify"}]}})
+    check("insp 마법봉 없음 — 거부 · queue 안 함", code >= 400 and len(queued(w)) == n0, (code, d))
     code, d = http(base + "/api/hub/magic", {"nick": "2nd", "view": "graph", "question": "판 번호 방식이 왜 필요해?", "selection": {
         "nodes": [{"id": "r-one"}, {"id": "d-pick"}], "graph_view": "feature"}})
     tree = json.loads(w["tree"].read_text(encoding="utf-8"))
@@ -413,7 +423,8 @@ def test_api(w, base):
     t = request_file(w, d["id"])["target"] if d.get("id") else {}
     check("2nd 책 스티커 — 답 자리 note · 질문 노드 안 만듦 · queue «🪄 책 ‹b1› 스티커 질문 … (블록 …)»", code == 200 and t.get("kind") == "note"
           and t.get("note") == "ab12cd34" and len(json.loads(w["tree"].read_text(encoding="utf-8"))["nodes"]) == nq
-          and queued(w)[-1][-1] == f"--message=🪄 책 ‹b1› 스티커 질문: 이 칸 뜻? (블록 1-개요)\n$2nd-magic {d.get('id')}", (code, d, t, queued(w)[-1:]))
+          and queued(w)[-1][-1] == (f"--message=🪄 책 ‹b1› 스티커 질문: 이 칸 뜻? (블록 1-개요)\n스티커 ab12cd34 — 답에 짧은 제목(--title · 20자 안팎)도 달 것"
+                                    f"\n$2nd-magic {d.get('id')}"), (code, d, t, queued(w)[-1:]))
     code, d = http(base + "/api/hub/magic", {"nick": "2nd", "view": "book", "question": "x", "selection": {"note": "ab12cd34"}})
     check("2nd 책 스티커 — notes.json 없으면 400", code == 400, (code, d))
     code, d = http(base + "/api/hub/magic", {"nick": "2nd", "view": "app", "question": "섬 질문", "selection": {}})
@@ -469,7 +480,7 @@ def test_ui(w, base):
         hb = page.locator("#hub").bounding_box()
         mm = fr.locator(".react-flow__minimap").bounding_box() if fr else None
         main = page.locator(".dv-main").bounding_box()
-        check("허브 좌하단 — 왼쪽 15px · 안쪽 800 × 150(+ 테두리 1px)", hb and abs(hb["x"] - main["x"] - 15) <= 1 and abs(hb["width"] - 802) <= 1
+        check("허브 좌하단 — 왼쪽 --dv-hub-left(알림 종이 있으면 종 오른쪽 60 · 없으면 15) · 안쪽 800 × 150(+ 테두리 1px)", hb and abs(hb["x"] - main["x"] - page.evaluate("parseFloat(getComputedStyle(document.querySelector('#hub')).left)")) <= 1 and page.evaluate("parseFloat(getComputedStyle(document.querySelector('#hub')).left)") in (15, 60) and abs(hb["width"] - 802) <= 1
               and abs(hb["height"] - 152) <= 1, hb)
         check("허브 아래 끝 = 그래프 미니맵 아래 끝(±2px)", hb and mm and abs((hb["y"] + hb["height"]) - (mm["y"] + mm["height"])) <= 2, (hb, mm))
         check("flowtree 좌하단 Controls(+ · − · 전체 화면) 없음", fr.locator(".react-flow__controls").count() == 0)
@@ -482,10 +493,10 @@ def test_ui(w, base):
         row = lambda n: page.locator(f'#hub .dv-hub-row[data-nick="{n}"]')  # noqa: E731
         txt = row("main").inner_text()
         check("MAIN 행 — 닉네임 · effort ● · 맥락 154k/258k (60%)", "MAIN" in txt and "●" in txt and "154k/258k (60%)" in txt, txt[:80])
-        check("INSP effort ◐(등록값) · 2ND ○", "◐" in row("insp").inner_text() and "○" in row("2nd").inner_text())
-        check("행 테두리 — MAIN 작업 중 빙글 · INSP 턴 끝 녹색 점멸 · 2ND 오류 빨강 점멸",
-              "m-spin" in row("main").get_attribute("class") and "m-blink" in row("insp").get_attribute("class")
-              and "m-err" in row("2nd").get_attribute("class"), [row(n).get_attribute("class") for n in ("main", "insp", "2nd")])
+        check("aux effort ◐(등록값) · 2ND ○", "◐" in row("aux").inner_text() and "○" in row("2nd").inner_text())
+        check("행 테두리 — MAIN 작업 중 빙글 · aux 턴 끝 녹색 점멸 · 2ND 오류 빨강 점멸",
+              "m-spin" in row("main").get_attribute("class") and "m-blink" in row("aux").get_attribute("class")
+              and "m-err" in row("2nd").get_attribute("class"), [row(n).get_attribute("class") for n in ("main", "aux", "2nd")])
         spin = page.evaluate("getComputedStyle(document.querySelector('#hub .dv-hub-row[data-nick=main]'), '::before').animationName")
         check("빙글 = 회전 애니메이션(::before)", spin == "dv-hub-spin", spin)
         # 즉시 툴팁
@@ -501,13 +512,13 @@ def test_ui(w, base):
         page.screenshot(path=str(SHOTS / "hub_graph.png"))
 
         # 행 클릭 — 점멸 꺼짐 · 누적창 · 트레이
-        row("insp").click()
-        check("INSP 클릭 → 선택 · 점멸 테두리 사라짐", wait_for(lambda: "is-sel" in row("insp").get_attribute("class")
-                                                       and "m-blink" not in row("insp").get_attribute("class"), 2), row("insp").get_attribute("class"))
+        row("aux").click()
+        check("aux 클릭 → 선택 · 점멸 테두리 사라짐", wait_for(lambda: "is-sel" in row("aux").get_attribute("class")
+                                                       and "m-blink" not in row("aux").get_attribute("class"), 2), row("aux").get_attribute("class"))
         page.reload()
         page.wait_for_selector("html[data-ready='1']", timeout=30000)
         wait_for(lambda: page.locator("#hub .dv-hub-row").count() == 7, 8)
-        check("확인 기록 유지(새로 열어도 INSP 점멸 없음)", "m-blink" not in row("insp").get_attribute("class"), row("insp").get_attribute("class"))
+        check("확인 기록 유지(새로 열어도 aux 점멸 없음)", "m-blink" not in row("aux").get_attribute("class"), row("aux").get_attribute("class"))
         wait_for(lambda: page.frame(url=lambda u: "/ft/" in u) and page.frame(url=lambda u: "/ft/" in u).locator(".react-flow__node").count() > 10, 20)
         fr = page.frame(url=lambda u: "/ft/" in u)
         row("main").click()
@@ -583,6 +594,37 @@ def test_ui(w, base):
         page.click("#hub .dv-hub-fold")
         check("다시 펼침 → 150", abs(page.locator("#hub").bounding_box()["height"] - 152) <= 1)
 
+        # 최소화(−) · 펼치기(+) — 접기 단추 옆 · 최소화 = 이름 칩만 · 화면(.dv-main) 좌하단(왼쪽 12 · 아래 32)
+        check("− 단추가 접기 단추 바로 왼쪽", page.evaluate("(() => { const f = document.querySelector('#hub .dv-hub-fold').getBoundingClientRect();"
+              " const m = document.querySelector('#hub .dv-hub-min').getBoundingClientRect(); return m.right <= f.left && f.left - m.right <= 4 && m.top === f.top; })()"))
+        row("main").click()
+        wait_for(lambda: page.is_visible("#hub .dv-hub-acc"), 2)
+        page.click("#hub .dv-hub-min")
+        mb = page.locator("#hub").bounding_box()
+        check("− → 좌하단(왼쪽 --dv-hub-min-left — 알림 종이 있으면 종 오른쪽 60 · 아래 32 = 그래프 아래 막대 26 위) · 높이 30 · 폭 400 미만",
+              abs(mb["x"] - main["x"] - page.evaluate("parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--dv-hub-min-left'))")) <= 1 and abs((main["y"] + main["height"]) - (mb["y"] + mb["height"]) - 32) <= 1
+              and abs(mb["height"] - 30) <= 1 and mb["width"] < 400, mb)
+        check("최소화 — 행 · 누적창 · 트레이 · 접기 단추 안 보임 · 칩 3개 이상",
+              page.locator("#hub .dv-hub-row").count() == 0 and not page.is_visible("#hub .dv-hub-acc") and not page.is_visible("#hub .dv-hub-tray")
+              and not page.is_visible("#hub .dv-hub-fold") and page.locator("#hub .dv-hub-chip").count() >= 3)
+        # 글자 범위 폭 ≤ 칩 폭 · 칩 오른쪽 끝 ≤ + 단추 왼쪽(빙글 테두리 ::before 가 scrollWidth 를 1px 늘려서 글자 범위로 잼)
+        check("최소화 — 칩 글자 안 잘림 · + 단추와 안 겹침", page.evaluate("[...document.querySelectorAll('#hub .dv-hub-chip')].every((c) => {"
+              " const g = document.createRange(); g.selectNodeContents(c); const b = c.getBoundingClientRect();"
+              " return g.getBoundingClientRect().width <= b.width && b.right <= document.querySelector('#hub .dv-hub-min').getBoundingClientRect().left; })"))
+        check("최소화 — 단추 제목 «펼치기» · 저장 hub.min", page.get_attribute("#hub .dv-hub-min", "title") == "펼치기"
+              and page.evaluate("Object.keys(localStorage).some((k) => k.endsWith('hub.min') && localStorage[k] === 'true')"))
+        page.click("#hub .dv-hub-min")
+        pb = page.locator("#hub").bounding_box()
+        check("+ → 가장 펼친 상태(원래 자리 · 800 × 150)", abs(pb["x"] - hb["x"]) <= 1 and abs(pb["y"] - hb["y"]) <= 1 and abs(pb["height"] - 152) <= 1
+              and abs(pb["width"] - 802) <= 1 and page.locator("#hub .dv-hub-row").count() == 7, pb)
+        page.click("#hub .dv-hub-fold")
+        check("+ 뒤 접기 → 기존 접힘(높이 30 · 아래 끝 그대로)", abs(page.locator("#hub").bounding_box()["height"] - 32) <= 1
+              and abs(sum(page.locator("#hub").bounding_box()[k] for k in ("y", "height")) - (hb["y"] + hb["height"])) <= 1)
+        page.click("#hub .dv-hub-min")
+        page.click("#hub .dv-hub-min")
+        check("접힘 + 최소화 → + = 접힘도 풀림(150)", abs(page.locator("#hub").bounding_box()["height"] - 152) <= 1
+              and page.evaluate("Object.keys(localStorage).some((k) => k.endsWith('hub.folded') && localStorage[k] === 'false')"))
+
         # 그래프 Ctrl+클릭 복수 선택 → devview 가 앎 → MAIN 마법봉
         fr.evaluate("window.__flowtree.center('r-one', 0.9)")
         time.sleep(0.4)
@@ -603,6 +645,13 @@ def test_ui(w, base):
         fr.locator('.react-flow__node[data-id="d-pick"]').click(position={"x": 30, "y": 12}, modifiers=["Control"])
         check("Ctrl+클릭 한 번 더 → 빠짐", wait_for(lambda: [n["id"] for n in page.evaluate("window.devview.flowSelection().nodes")] == ["r-one"], 3),
               page.evaluate("window.devview.flowSelection()"))
+        # Alt+W — 그래프 iframe 안에 포커스가 있어도 2ND 마법봉 단추와 같음
+        page.keyboard.press("Alt+KeyW")
+        ok = wait_for(lambda: page.is_visible("#hub .dv-hub-input"), 2)
+        head = page.inner_text("#hub .dv-hub-input-head")
+        check("그래프 iframe 안 Alt+W → 질문 입력창 · 대상 노드", ok and "2ND" in head and "요구 하나" in head, head)
+        page.click('#hub .dv-hub-acts [data-act="cancel"]')
+        page.evaluate("document.querySelector('#ftView iframe').focus()")
         # 그래프 iframe 안 Esc — 노드 선택 해제와 같이 허브 행 선택도 해제
         check("그래프 안에 포커스 · 허브 행 고름", page.evaluate("document.activeElement.tagName") == "IFRAME" and page.is_visible("#hub .dv-hub-acc"))
         page.keyboard.press("Escape")
@@ -615,6 +664,34 @@ def test_ui(w, base):
         wait_for(lambda: page.evaluate("window.devview.activePath()") == "src/calc.py", 5)
         page.evaluate("(() => { const ed = window.devview.editor(); ed.setSelection({startLineNumber: 6, startColumn: 1, endLineNumber: 7, endColumn: 21}); ed.focus(); })()")
         check("허브는 코드 보기에도 같은 자리", page.is_visible("#hub") and abs(page.locator("#hub").bounding_box()["x"] - hb["x"]) <= 1)
+        # Alt+W — 편집기 안에서 2ND 마법봉 단추와 같음(행을 안 골라도) · 글자가 안 들어감
+        text0 = page.evaluate("window.devview.editor().getValue()")
+        page.keyboard.press("Alt+KeyW")
+        ok = wait_for(lambda: page.is_visible("#hub .dv-hub-input"), 2)
+        head = page.inner_text("#hub .dv-hub-input-head")
+        check("편집기 안 Alt+W → 질문 입력창 · 대상(파일 · 줄)", ok and "src/calc.py 6–7줄" in head and "2ND" in head, head)
+        check("Alt+W 가 편집기에 글자를 넣지 않음", page.evaluate("window.devview.editor().getValue()") == text0)
+        page.keyboard.press("Alt+KeyW")
+        check("입력창에서 Alt+W 다시 → 그대로 · 글자 안 들어감", wait_for(lambda: page.evaluate("document.activeElement.tagName") == "TEXTAREA", 2)
+              and page.input_value("#hub .dv-hub-input textarea") == "")
+        page.click('#hub .dv-hub-acts [data-act="cancel"]')
+        page.evaluate("window.devview.editor().focus()")
+        # 최소화 상태에서도 Alt+W 가 입력창을 보인다
+        page.click("#hub .dv-hub-min")
+        page.evaluate("window.devview.editor().focus()")
+        page.keyboard.press("Alt+KeyW")
+        check("최소화 중 Alt+W → 풀리고 입력창 보임", wait_for(lambda: page.is_visible("#hub .dv-hub-input"), 2))
+        page.click('#hub .dv-hub-acts [data-act="cancel"]')
+        # 접힘 상태에서도
+        page.click("#hub .dv-hub-fold")
+        page.evaluate("window.devview.editor().focus()")
+        page.keyboard.press("Alt+KeyW")
+        ok = wait_for(lambda: page.is_visible("#hub .dv-hub-input"), 2)
+        ib = page.locator("#hub .dv-hub-input").bounding_box() if ok else None
+        check("접힘 중 Alt+W → 입력창이 화면 안에 보임", ok and ib["height"] > 40 and ib["y"] >= 0 and ib["y"] + ib["height"] <= 1000, ib)
+        page.click('#hub .dv-hub-acts [data-act="cancel"]')
+        page.click("#hub .dv-hub-fold")
+        page.evaluate("window.devview.editor().focus()")
         row("2nd").click()
         check("행 클릭이 편집기 포커스를 안 빼앗음", page.evaluate("window.devview.editor().hasTextFocus()"))
         page.click('#hub .dv-hub-tray [data-act="wand"]')
@@ -770,7 +847,7 @@ def test_ui(w, base):
         ta.fill("")
         # Alt+←→ 세션 탭
         page.keyboard.press("Alt+ArrowRight")
-        check("Alt+→ → 다음 세션 탭(INSP)", wait_for(lambda: page.evaluate("window.devview.chat().cur") == "insp", 2), page.evaluate("window.devview.chat()"))
+        check("Alt+→ → 다음 세션 탭(2ND)", wait_for(lambda: page.evaluate("window.devview.chat().cur") == "2nd", 2), page.evaluate("window.devview.chat()"))
         page.keyboard.press("Alt+ArrowLeft")
         check("Alt+← → 이전 세션 탭(MAIN)", wait_for(lambda: page.evaluate("window.devview.chat().cur") == "main", 2))
         # 답변 마크다운 — 표 · 굵게(빨강) · 제목 크기 · 코드 · HTML 주입 없음
@@ -810,15 +887,15 @@ def test_ui(w, base):
         check("그 탭을 열면 점멸 꺼짐(2ND 오류) · 허브 행도", ok and wait_for(lambda: page.evaluate(
             "window.devview.hub().rows.find((r) => r.nick === '2nd').state") == "", 2), page.get_attribute('.dv-chat-tab[data-nick="2nd"]', "class"))
         # 새 최종 답변 → 허브 행 점멸(열려 있지 않은 세션)
-        with open(w["rollouts"]["insp"], "a", encoding="utf-8") as f:
+        with open(w["rollouts"]["aux"], "a", encoding="utf-8") as f:
             for x in (ev(time.time(), "event_msg", {"type": "task_started", "turn_id": "i2"}), uitem(time.time(), "다시"),
                       amsg(time.time(), "새 답", "final_answer"), ev(time.time(), "event_msg", {"type": "task_complete", "turn_id": "i2", "last_agent_message": "새 답"})):
                 f.write(json.dumps(x, ensure_ascii=False) + "\n")
         page.click('#views [data-view="graph"]')
-        ok = wait_for(lambda: "m-blink" in (page.get_attribute('#hub .dv-hub-row[data-nick="insp"]', "class") or ""), 5)
-        check("새 최종 답변 → 허브 행 점멸 · 대화 탭도", ok and "m-blink" in (page.get_attribute('.dv-chat-tab[data-nick="insp"]', "class") or ""),
-              page.get_attribute('#hub .dv-hub-row[data-nick="insp"]', "class"))
-        # Alt+A · S · D — 다른 보기(그래프)에서도 대화 보기로 가서 그 번호 세션(탭 순서 MAIN · INSP · 2ND)
+        ok = wait_for(lambda: "m-blink" in (page.get_attribute('#hub .dv-hub-row[data-nick="aux"]', "class") or ""), 5)
+        check("새 최종 답변 → 허브 행 점멸 · 대화 탭도", ok and "m-blink" in (page.get_attribute('.dv-chat-tab[data-nick="aux"]', "class") or ""),
+              page.get_attribute('#hub .dv-hub-row[data-nick="aux"]', "class"))
+        # Alt+A · S · D — 다른 보기(그래프)에서도 대화 보기로 가서 그 번호 세션(탭 순서 MAIN · 2ND · aux)
         tabs = page.evaluate("[...document.querySelectorAll('.dv-chat-tab')].map((t) => t.dataset.nick)")
         page.keyboard.press("Alt+KeyD")
         check("그래프에서 Alt+D → 대화 보기 · 3번 세션", wait_for(lambda: page.locator("#chatView").is_visible()

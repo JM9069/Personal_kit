@@ -1,18 +1,22 @@
 # flowtree 명령 — Codex 세션(MAIN · 2ND · INSP)이 그래프(tree.json)를 읽고 쓰는 유일한 길
 """
 사용: python3 flowtree.py --role <main|2nd|insp> <명령> …   (기본 그래프 = <현재 폴더>/docs/flowtree/tree.json · --tree 로 바꿈)
-  MAIN : add <부모|-> "제목" --summary "…(60자)" [--text "설명"] [--doc 경로#앵커] [--graph task|hand_off] [--func "파일 | 함수 | 설명 | ⭐"]…
+  MAIN : add <부모|-> "제목" --summary "…(60자)" [--text "설명"] [--doc 경로#앵커] [--graph task|hand_off] [--section N] [--func "파일 | 함수 | 설명 | ⭐"]…
          funcs-set <작업> --row "파일 | 함수 | 설명 | ⭐" …(여러 번) 또는 --json '[{"file","name","desc","core"}]'(@파일 도 됨)
            (함수 표 = 지금 코드 — 유저가 고친 칸은 못 덮음 · 목록에 없는 에이전트 행은 지움)
          funcs-ack <작업> ["무엇을 했나"](유저가 바꾼 이름을 코드 · 시험 · 문서에 반영함 → 이름 바뀜 닫힘)
          funcs-scan <작업>(표의 파일에서 함수 바로 위 주석 한 줄 → 빈 설명 칸 · 코드에 없는 이름 경고)
          start <작업> · hold <작업> "사유"
-         block <작업> "유저에게 필요한 것" · done <작업> · verify-add <대상> "확인할 것"
-         survey-add <대상|-> "질문" --option "라벨|풀이|장점;…|단점;…" … [--recommend N] [--why "추천 이유"] [--detail "배경"] [--graph task|hand_off]
+         block <작업> "유저에게 필요한 것" · done <작업> · verify-add <대상> "확인할 것" [--section N]
+         section-set <노드> <N|->(화면 섹션 바꾸기 · «-» 면 Main 만)
+         fill <틀 노드> --title … [--summary …] [--text …] [--doc 경로#앵커] [--func "파일 | 함수 | 설명 | ⭐"]…(작업)
+           [--script 경로](검증) · [--option "라벨|풀이|장점;…|단점;…"]… [--recommend N] [--why …] [--detail …](설문 · 제목 = 질문)
+         survey-add <대상|-> "질문" --option "라벨|풀이|장점;…|단점;…" … [--recommend N] [--why "추천 이유"] [--detail "배경"] [--graph task|hand_off] [--section N]
          survey-ack <설문> ["무엇을 했나"] · import-analysis <폴더>(reqs.json · facts.json → Task 노드)
+         file-add <파일|폴더>…(지급 파일 노드 · 폴더면 안의 파일 전부 · 다시 해도 있는 경로는 그대로)
   2ND  : answer-start <질문> · answer <질문> --short "결론(60자)" "본문"
   INSP : verify-start <검증> · verify-hold <검증> "사유" · run <검증> pass|fail "근거(시험 경로 · 명령)"
-  공통 : inbox(내 역할이 할 일 + 대상 맥락) · show <id>(노드 + 연결 노드) · check(형식 · 연결 · 앵커 점검)
+  공통 : inbox(내 역할이 할 일 + 대상 맥락) · show <id>(노드 + 연결 노드) · check(형식 · 연결 · 앵커 점검) · frames [섹션](빈 틀 노드 id)
   유저(화면 · 시험용 --role user): vote <설문> [--pick N|--clear] [--memo …] [--hold|--unhold] · edit <노드> [--title …] [--summary …] [--text …]
          funcs <작업> [--row f1] [--file …] [--name …] [--desc …] [--core|--no-core] [--del] · check-add <대상> "확인할 것"
   한 번만: migrate(옛 형식 answers · verified · 유저 questions → 질문 · 검증 노드)
@@ -100,7 +104,9 @@ def vote_text(n):
     opts = n.get("options") or []
     # 조각
     parts = ["보류"] if v["hold"] else []
-    if v["pick"] is not None and v["pick"] < len(opts):
+    if v["pick"] == store.PICK_OTHER:
+        parts.append("기타")
+    elif v["pick"] is not None and v["pick"] < len(opts):
         parts.append(f"선택: {v['pick'] + 1}. {opts[v['pick']].get('label', '')}")
     if v["memo"]:
         parts.append(f"메모: {v['memo']}")
@@ -117,7 +123,8 @@ def inbox_lines(tree, role, now):
     for n in nodes.values():
         # 종류
         kind = n.get("kind")
-        if kind not in store.WORK_KINDS:
+        # 빈 틀 노드는 할 일이 아님
+        if kind not in store.WORK_KINDS or n.get("frame"):
             continue
         # 상태
         st = store.status(n, nodes, now)
@@ -132,7 +139,7 @@ def inbox_lines(tree, role, now):
                 out.append(node_line(n, nodes, now) + (f" — {st['last'].get('note')}" if st["last"] and st["last"].get("note") else "")
                            + (f" · 함수 {len(rows)}" if rows else ""))
             elif kind == "survey" and store.survey_pending(n):
-                out.append(f"{n['id']} [설문 {'보류' if store.survey_vote(n)['hold'] else '결정됨'}] {n.get('title', '')} — {vote_text(n)}")
+                out.append(f"{n['id']} [설문 {'보류' if store.survey_vote(n)['hold'] else '결정됨'}] {store.eff(n, 'title')} — {vote_text(n)}")
             elif kind == "verify" and st["status"] == "fail":
                 out.append(node_line(n, nodes, now) + f" — {st['last'].get('note', '')}")
                 out.append(ctx_line(n.get("parent"), nodes, now))
@@ -167,6 +174,12 @@ def show_lines(tree, nid, now):
     # 출력 줄
     out = [node_line(n, nodes, now)]
     out.append(f"그래프: {store.graph_of(nodes, n)}")
+    if "screen" in n:
+        out.append(f"섹션: {n['screen']}")
+    if n.get("frame"):
+        out.append("빈 틀 노드")
+    if store.eff(n, "script"):
+        out.append(f"스크립트: {store.eff(n, 'script')}")
     for key, name in (("summary", "요약"), ("text", "설명")):
         if store.eff(n, key):
             out.append(f"{name}: {store.eff(n, key)}" + (f"  (유저 고침 — 원래: {n.get(key) or '없음'})" if (n.get("edit") or {}).get(key) else ""))
@@ -281,6 +294,24 @@ def scan_funcs(tree, nid, root):
     return found
 
 
+# 파일 · 폴더 → 프로젝트 루트 기준 파일 경로(폴더는 안의 파일 전부 · 점 이름 · 원본 지문 목록 제외)
+# paths: 받은 경로 / root: 프로젝트 루트
+def file_paths(paths, root):
+    # 루트 · 결과
+    root = Path(root).resolve()
+    out = []
+    for raw in paths:
+        p = (root / raw).resolve()
+        if not p.exists():
+            raise store.StoreError(f"없는 경로: {raw}")
+        if root not in p.parents:
+            raise store.StoreError(f"프로젝트 밖 경로: {raw}")
+        found = [p] if p.is_file() else sorted(x for x in p.rglob("*") if x.is_file() and x.name != "_origin_md5.txt"
+                                               and not any(s.startswith(".") for s in x.relative_to(p).parts))
+        out += [x.relative_to(root).as_posix() for x in found]
+    return out
+
+
 # 점검 줄 — 오류 · 경고만(많으면 개수만)
 # tree_path: tree.json 경로 / root: 프로젝트 루트 → (줄 목록, 오류 수)
 def check_lines(tree_path, root):
@@ -326,6 +357,7 @@ def build_parser():
     p.add_argument("--graph", default=None, choices=(*store.GRAPHS, *store.OLD_GRAPHS), help="그래프 task · hand_off(옛 이름 adr 도 받음 · 없으면 부모 그래프 · 맨 위면 hand_off)")
     p.add_argument("--names", default=None, help="옛 이름 칸 «파일.py · 함수_이름 …» — 함수 표 행으로 올림")
     p.add_argument("--func", action="append", default=[], help="함수 표 행 «파일 | 함수 | 설명 | ⭐»(여러 번)")
+    p.add_argument("--section", default=None, help="화면 섹션 번호(없으면 칸 없음)")
     p = cmd("funcs-set", ("id", "작업 id"))
     p.add_argument("--row", action="append", default=[], help="행 «파일 | 함수 | 설명 | ⭐»(여러 번 · ⭐ = 핵심)")
     p.add_argument("--json", default=None, help="행 목록 JSON(«@경로» 면 파일)")
@@ -335,7 +367,17 @@ def build_parser():
     cmd("hold", ("id", "작업 id"), ("note", "사유"))
     cmd("block", ("id", "작업 id"), ("note", "유저에게 필요한 것"))
     cmd("done", ("id", "작업 id"))
-    cmd("verify-add", ("id", "대상 id"), ("note", "확인할 것"))
+    p = cmd("verify-add", ("id", "대상 id"), ("note", "확인할 것"))
+    p.add_argument("--section", default=None, help="화면 섹션 번호(없으면 대상을 따름)")
+    cmd("section-set", ("id", "노드 id"), ("section", "섹션 번호(칸을 지우려면 -)"))
+    p = cmd("fill", ("id", "틀 노드 id"))
+    for k, h in (("--title", "제목(설문은 질문)"), ("--summary", "요약(60자)"), ("--text", "설명"), ("--doc", "연결 문서 «경로#앵커»"),
+                 ("--script", "검증 스크립트 경로"), ("--why", "추천 이유"), ("--detail", "배경")):
+        p.add_argument(k, default=None, help=h)
+    p.add_argument("--func", action="append", default=[], help="함수 표 행 «파일 | 함수 | 설명 | ⭐»(여러 번)")
+    p.add_argument("--option", action="append", default=[], help="선택지 «라벨|풀이|장점;…|단점;…»(여러 번)")
+    p.add_argument("--recommend", type=int, default=None, help="추천 선택지 번호(1부터)")
+    cmd("frames", ("section", "섹션 번호(없으면 전부)", {"nargs": "?", "default": None}))
     cmd("answer-start", ("id", "질문 id"))
     p = cmd("answer", ("id", "질문 id"), ("note", "본문", {"nargs": "?", "default": ""}))
     p.add_argument("--short", required=True, help="결론 한 줄(60자 이내)")
@@ -348,8 +390,10 @@ def build_parser():
     p.add_argument("--why", default="", help="추천 이유")
     p.add_argument("--detail", default="", help="배경 · 메커니즘(긴 글 — 확대 · 세부 보기에)")
     p.add_argument("--graph", default=None, choices=(*store.GRAPHS, *store.OLD_GRAPHS), help="그래프 task · hand_off(옛 이름 adr 도 받음 · 없으면 대상 그래프 · 맨 위면 task)")
+    p.add_argument("--section", default=None, help="화면 섹션 번호(없으면 대상을 따름)")
     cmd("survey-ack", ("id", "설문 id"), ("note", "무엇을 했나", {"nargs": "?", "default": ""}))
     cmd("import-analysis", ("folder", "분석 결과 폴더(reqs.json · facts.json)"))
+    cmd("file-add", ("paths", "파일 · 폴더(폴더면 안의 파일 전부)", {"nargs": "+"}))
     p = cmd("vote", ("id", "설문 id"))
     p.add_argument("--pick", type=int, default=None, help="선택 번호(1부터)")
     p.add_argument("--clear", action="store_true", help="선택 해제")
@@ -357,7 +401,7 @@ def build_parser():
     p.add_argument("--hold", action="store_true", help="보류")
     p.add_argument("--unhold", action="store_true", help="보류 풀기")
     p = cmd("edit", ("id", "노드 id"))
-    for k, h in (("--title", "제목"), ("--summary", "요약(60자)"), ("--text", "설명")):
+    for k, h in (("--title", "제목"), ("--summary", "요약(60자)"), ("--text", "설명"), ("--script", "검증 스크립트 경로")):
         p.add_argument(k, default=None, help=h)
     p = cmd("funcs", ("id", "작업 id"))
     p.add_argument("--row", default="", help="행 id(없으면 새 행)")
@@ -379,13 +423,18 @@ def build_parser():
 def op_args(a):
     if a.cmd == "add":
         return {"parent": a.parent, "title": a.title, "summary": a.summary, "text": a.text, "doc": a.doc, "graph": a.graph,
-                "names": a.names, "funcs": a.func}
+                "names": a.names, "funcs": a.func, "section": a.section}
     if a.cmd in ("start", "done"):
         return {"task": a.id}
     if a.cmd in ("hold", "block"):
         return {"task": a.id, "note": a.note}
     if a.cmd == "verify-add":
-        return {"target": a.id, "what": a.note}
+        return {"target": a.id, "what": a.note, "section": a.section}
+    if a.cmd == "section-set":
+        return {"node": a.id, "section": a.section}
+    if a.cmd == "fill":
+        return {"node": a.id, "title": a.title, "summary": a.summary, "text": a.text, "doc": a.doc, "funcs": a.func, "script": a.script,
+                "options": a.option, "recommend": a.recommend - 1 if a.recommend else None, "why": a.why, "detail": a.detail}
     if a.cmd == "answer-start":
         return {"question": a.id}
     if a.cmd == "answer":
@@ -398,7 +447,7 @@ def op_args(a):
         return {"verify": a.id, "result": a.result, "note": a.note}
     if a.cmd == "survey-add":
         return {"target": a.id, "question": a.note, "options": a.option, "why": a.why, "detail": a.detail, "graph": a.graph,
-                "recommend": a.recommend - 1 if a.recommend else None}
+                "section": a.section, "recommend": a.recommend - 1 if a.recommend else None}
     if a.cmd == "survey-ack":
         return {"survey": a.id, "note": a.note}
     if a.cmd == "import-analysis":
@@ -407,6 +456,8 @@ def op_args(a):
         if not folder.is_dir():
             raise store.StoreError(f"폴더 없음: {folder}")
         return {"reqs": store.read_json(folder / "reqs.json"), "facts": store.read_json(folder / "facts.json")}
+    if a.cmd == "file-add":
+        return {"files": file_paths(a.paths, Path(getattr(a, "root", None) or Path.cwd()))}
     if a.cmd == "vote":
         # 인자 — 준 칸만
         kw = {"survey": a.id}
@@ -420,7 +471,7 @@ def op_args(a):
             kw["hold"] = bool(a.hold)
         return kw
     if a.cmd == "edit":
-        return {"node": a.id, **{k: getattr(a, k) for k in ("title", "summary", "text") if getattr(a, k) is not None}}
+        return {"node": a.id, **{k: getattr(a, k) for k in ("title", "summary", "text", "script") if getattr(a, k) is not None}}
     if a.cmd == "funcs-set":
         # 행 목록 — --row + --json
         rows = list(a.row)
@@ -496,10 +547,17 @@ def run(argv):
             store.write_json(user_path, new_user)
         store.mutate(tree_path, fn)
         return [f"옮김: 질문 {counts['questions']} · 답 {counts['answers']} · 검증 {counts['verifies']}"], 0
+    # frames — 그래프가 아직 없으면 여기서 틀까지 깖(첫 쓰기와 같음)
+    if a.cmd == "frames" and not tree_path.exists():
+        store.mutate(tree_path, lambda t, rev: None)
     if not tree_path.exists():
         raise store.StoreError(f"그래프 파일 없음: {tree_path}")
     # 그래프
     tree = store.read_json(tree_path, {}) or {}
+    if a.cmd == "frames":
+        # 빈 틀 노드 id — 섹션 고르기
+        ids = [n["id"] for n in tree.get("nodes", []) if n.get("frame") and a.section in (None, str(n.get("screen")))]
+        return [" ".join(ids) or "빈 틀 없음"], 0
     if a.cmd == "inbox":
         if role not in store.ROLES:
             raise store.StoreError("--role 없음 — main · 2nd · insp")

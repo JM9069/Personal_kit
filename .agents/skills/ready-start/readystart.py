@@ -4,7 +4,7 @@
 #   python3 ~/.codex/skills/ready-start/readystart.py status 항목 "🟢 내용" [--kit 키트]   맨 아래 «준비 상태» 에 한 줄 덧붙임
 #
 # 왜 파일인가: 터미널 출력은 복사가 불편하다 → 유저가 에디터에서 줄마다 복사해 새 탭에 붙여 넣는다
-#   세 세션(MAIN · INSP · 2ND)은 이 파일의 «준비 상태» 를 보고 venv · devview · 커밋을 기다릴지 정한다
+#   두 세션(MAIN · 2ND)은 이 파일의 «준비 상태» 를 보고 venv · devview · 커밋을 기다릴지 정한다
 # 키트 찾기: --kit → 지금 폴더에 AGENTS.md · docs/ 가 있으면 지금 폴더 → <루트>/kit
 # 루트 찾기: --root → git rev-parse --show-toplevel → 키트의 부모
 # 종료코드: 0 정상 · 2 키트 · 파일 없음
@@ -23,14 +23,16 @@ MODEL = "gpt-6.1-sol"
 # 역할 → (강도, 시작 메시지)
 # 시작 메시지 — MAIN «$main»(허브 연결 → 바로 과제 파악) · 2ND «$2nd 파악시작»(허브 연결 → 대기 서브 → 가볍게 과제 훑기) (2026-11-04 유저 지정)
 # MAIN 강도 — 첫 실행은 high(온톨로지가 끝나면 유저가 직접 내린다 · 2026-11-04 유저 지정)
-ROLES = [("MAIN", "high", "$main"), ("INSP", "high", "$insp"), ("2ND", "medium", "$2nd 파악시작")]
+# 검증은 세션이 아니라 MAIN 의 서브(2026-11-04 유저 지정 — INSP 세션 없앰)
+ROLES = [("MAIN", "high", "$main"), ("2ND", "medium", "$2nd 파악시작")]
 # 명령에 늘 붙이는 설정 — 플랫폼 설정에 같은 키가 다른 값이면 merge 가 안 바꾸므로 -c 로도(-c 가 설정 파일보다 앞섬)
 #   서브 V2 + 기다리기 하한 10분 · 최대 1시간(키트 .codex/config.toml 과 같은 값 · 0.163 --strict-config 통과 2026-11-04)
 EXTRA = ["model_verbosity=high", "service_tier=fast",
          "features.multi_agent_v2.enabled=true",
          "features.multi_agent_v2.min_wait_timeout_ms=600000",
          "features.multi_agent_v2.default_wait_timeout_ms=600000",
-         "features.multi_agent_v2.max_wait_timeout_ms=3600000"]
+         "features.multi_agent_v2.max_wait_timeout_ms=3600000",
+         "agents.max_concurrent_threads_per_session=8"]
 
 
 # 키트 = 작업 폴더(AGENTS.md 와 docs/ 가 있는 곳)
@@ -80,9 +82,9 @@ def render(kit: Path, root: Path) -> str:
     now = time.strftime("%H:%M")
     out = [f"# ReadyStart — 세션 띄우는 명령 ($ready-start 가 씀 · 커밋하지 않음 · {time.strftime('%Y-%m-%d %H:%M')})",
            "",
-           "- 순서: 0 devview → 1 MAIN → 2 INSP → 3 2ND · 줄마다 **새 터미널 탭**에서 붙여 넣기 · 0번을 먼저(압축 훅이 세 세션에 먹게) · 1 ~ 3 은 동시에 해도 된다",
+           "- 순서: 0 devview → 1 MAIN → 2 2ND · 줄마다 **새 터미널 탭**에서 붙여 넣기 · 0번을 먼저(압축 훅이 두 세션에 먹게) · 1 · 2 는 동시에 해도 된다",
            "- 처음 뜰 때 «폴더 신뢰» 는 예 · «Hooks need review» 는 2(Trust all and continue)",
-           "- 세 세션은 뜨자마자 일을 시작한다 — venv · devview · git 커밋이 필요한 일만 맨 아래 «준비 상태» 를 보고 기다린다",
+           "- 두 세션은 뜨자마자 일을 시작한다 — venv · devview · git 커밋이 필요한 일만 맨 아래 «준비 상태» 를 보고 기다린다",
            "",
            "## 0) devview + 압축 훅",
            "새 터미널 탭에서 붙여 넣기(띄운 탭은 닫지 않는다 · 훅이 이미 있으면 «이미 있음» 이 떠도 그대로 진행)",
@@ -97,7 +99,7 @@ def render(kit: Path, root: Path) -> str:
             "그 탭 명령의 `codex` 를 `codex resume <그 세션 /status 의 chat ID>` 로 바꿔 다시 띄우면 먹는다(대화 · 설정은 그대로)",
             "",
             f"{STATUS_HEAD}",
-            "> ready-start 가 단계마다 한 줄 덧붙인다 · 🟢 됨 · 🟠 유저 판단 · 🔴 안 됨 · ⏳ 진행 중 · 세 세션은 이 절만 본다(sed -n '/^## 준비 상태/,$p')",
+            "> ready-start 가 단계마다 한 줄 덧붙인다 · 🟢 됨 · 🟠 유저 판단 · 🔴 안 됨 · ⏳ 진행 중 · 두 세션은 이 절만 본다(sed -n '/^## 준비 상태/,$p')",
             "",
             f"- {now} 시작 — ⏳ 준비 중(git 이름 → git 등록 → config → 훅 → AGENTS · 스킬 → venv → envcheck → devview)"]
     return "\n".join(out) + "\n"

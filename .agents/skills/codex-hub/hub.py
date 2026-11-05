@@ -2,11 +2,11 @@
 # 코덱스 허브 — 이 Codex 세션을 devview 허브에 붙이고 지금 작업(상태 줄) · 큰 완료(누적)를 알림 · 표준 라이브러리만
 """
 사용(작업 폴더 = 키트에서):
-  python3 ~/.codex/skills/codex-hub/hub.py register --nick main|insp|2nd|이름 [--effort high] [--model 이름]
+  python3 ~/.codex/skills/codex-hub/hub.py register --nick main|2nd|이름 [--effort high] [--model 이름]
   python3 ~/.codex/skills/codex-hub/hub.py status "❇️_1 : UI 구현. 운영자 화면"
   python3 ~/.codex/skills/codex-hub/hub.py log "❇️_1 운영자 화면 완료 · src/ui/admin.py"
   python3 ~/.codex/skills/codex-hub/hub.py whoami
-  python3 ~/.codex/skills/codex-hub/hub.py send --to insp '글'   다른 세션에 codex queue · 글 앞에 «@보낸이름 » 자동(유저 지시와 구별)
+  python3 ~/.codex/skills/codex-hub/hub.py send --to 2nd '글'   다른 세션에 codex queue · 글 앞에 «@보낸이름 » 자동(유저 지시와 구별)
   python3 ~/.codex/skills/codex-hub/hub.py hook        Codex 훅이 stdin JSON 으로 부름(선택 · 출력 없음 · 늘 종료코드 0)
   python3 ~/.codex/skills/codex-hub/hub.py register --nick main --claude [--tmux 대상]   Claude Code 세션(tmux 안에서 띄운 것)
 Claude 세션: 세션 id = 자기 claude 프로세스의 ~/.claude/sessions/<pid>.json(부모를 거슬러 찾음 · 없으면 작업 폴더 projects 의 최근 jsonl)
@@ -33,7 +33,7 @@ from pathlib import Path
 # 허브 폴더 이름
 HUB = ".codex-hub"
 # 역할 닉네임(대문자로 와도 이 글자로 맞춤)
-ROLES = ("main", "insp", "2nd")
+ROLES = ("main", "2nd")
 # 닉네임 허용 모양 — 파일 이름으로 쓰므로 글자 · 숫자 · 한글 · _ · - 만
 NICK_RE = re.compile(r"^[0-9A-Za-z가-힣_-]{1,24}$")
 # 상태 줄 · 누적 한 줄 최대 글자 수(넘으면 거부 — 화면은 넘치면 … · 툴팁)
@@ -385,7 +385,7 @@ def find_me(hub, nick=None):
 # a: 명령줄 값 / hub: 허브 폴더
 def cmd_register(a, hub):
     if not a.nick:
-        raise HubError("--nick 없음 — 역할 스킬이 정해 준 이름(main · insp · 2nd) · 없으면 유저에게 «허브에 쓸 이름?»")
+        raise HubError("--nick 없음 — 역할 스킬이 정해 준 이름(main · 2nd) · 없으면 유저에게 «허브에 쓸 이름?»")
     if a.claude:
         return register_claude(a, hub)
     # 닉네임 · thread · 기록 파일
@@ -589,7 +589,7 @@ def build_parser():
     sub = ap.add_subparsers(dest="cmd", required=True, metavar="명령")
     # 등록
     p = sub.add_parser("register", help="허브에 붙기")
-    p.add_argument("--nick", default=None, help="main · insp · 2nd · 이름")
+    p.add_argument("--nick", default=None, help="main · 2nd · 이름")
     p.add_argument("--effort", default=None, help="기록 · 프로세스에서 못 찾을 때 쓸 값")
     p.add_argument("--model", default=None, help="모델 이름(기록에서 못 찾을 때)")
     p.add_argument("--thread", default=None, help="세션 id(기본 CODEX_THREAD_ID · 시험용)")

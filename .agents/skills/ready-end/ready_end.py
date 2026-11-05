@@ -8,6 +8,7 @@
 - 표준 라이브러리만 · 파이썬 3.8 이상
 """
 import argparse
+import importlib.util
 import os
 import re
 import socket
@@ -273,9 +274,12 @@ def check_ready(root, files, untracked, run_tests, start_port):
         add("R3", "warn", "테스트 건너뜀(--no-test)")
     elif not (work / "tests").is_dir():
         add("R3", "warn", "tests/ 없음 — 확인한 방법을 서술형에서 무엇으로 말할지")
+    elif importlib.util.find_spec("xdist") is None:
+        # 전체 시험은 병렬로만 돌린다(유저 지정 11/04 — 순서대로 돌리면 제출 직전 시간을 다 쓴다)
+        add("R3", "warn", "pytest-xdist 없음 — 전체 시험 건너뜀(pip install pytest-xdist 뒤 다시)")
     else:
         t0 = time.time()
-        p = subprocess.run([sys.executable, "-m", "pytest", "-q", "tests"], cwd=work, capture_output=True, text=True,
+        p = subprocess.run([sys.executable, "-m", "pytest", "-q", "-n", "auto", "tests"], cwd=work, capture_output=True, text=True,
                            encoding="utf-8", errors="replace")
         last = (p.stdout.strip().splitlines() or ["출력 없음"])[-1]
         if p.returncode in (0, 5):

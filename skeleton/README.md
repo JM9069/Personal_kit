@@ -6,7 +6,7 @@
 1. 과제 README · 자료 파일을 받는다(bookkit A 카드와 같은 때)
 2. **K0 · K3 · K5 는 바로 서브에게** — 카드(cards/)와 키트 README 만으로 된다(유저 확인 없음)
 3. 계획표 초안: `python3 skeleton/plan.py --task <과제 폴더> [--book bookkit/books/<이름>]` → `skeleton/out/plan.json · plan.md`(묶음 · 파일 · 함수 이름 · 비워 둘 설정 칸 · 근거). 이름 칸 «다듬을 칸» 은 서브가 다듬는다
-4. **K1 · K2 · K4 는 hand_off 의 파일 · 함수 표를 유저가 확인한 뒤** — 계획표(파일 · 함수 이름)를 hand_off 작업 개요의 «뼈대 파일 · 함수 표» 에 옮기고 유저가 이름을 고쳐 확인 → 확인된 줄만 서브가 구현(유저가 고친 이름 우선 · CODE_RULE 9-1). flowtree 는 구현 방향이 다 잡힌 뒤 처음 그릴 때 `skeleton/to_flowtree.py`(완료 노드로 붙이기)로 뼈대 결과를 완료 노드로 붙인다
+4. **K1 · K2 · K4 는 hand_off 의 파일 · 함수 표를 유저가 확인한 뒤** — 계획표(파일 · 함수 이름)를 hand_off 작업 개요의 «뼈대 파일 · 함수 표» 에 옮기고 유저가 이름을 고쳐 확인 → 확인된 줄만 서브가 구현(유저가 고친 이름 우선 · CODE_RULE 9-1). flowtree 는 2차판 시점에 쉬운 것만 초안($graph 준비판 · 이 계획표가 재료) → 논의 뒤 보강할 때 `skeleton/to_flowtree.py`(완료 노드로 붙이기)로 뼈대 결과를 완료 노드로 붙인다
 5. 부품 복사: `python3 skeleton/copy_parts.py K0`(묶음 이름 또는 lib 경로) — src · tests · 루트로 복사 · `from lib.` 을 복사한 자리로 · WORKLOG 한 줄
 6. 끝 확인: `python3 skeleton/check.py --task <과제 폴더>` — 새 DB → 자료 적용 → 기본 계산 → 앱 기동 · 주요 경로 → 종료 · 단계마다 통과 · 실패 · 건너뜀 한 줄
 
@@ -41,7 +41,7 @@
 | 파일 | 무엇 |
 |---|---|
 | plan.py | 과제 폴더 + bookkit 분석 결과(있으면) → 계획표 초안(out/plan.json · plan.md) |
-| to_flowtree.py | 뼈대로 만든 결과 → flowtree 완료 노드로 붙이기(처음 그릴 때 · add → start → done) — `--bundles K0 K3 …` · `--section <섹션 id>`(안 주면 «뼈대(skeleton)» 섹션을 만듦) · `--map K1=<섹션 id> …` · `--graph hand_off\|task` · `--dry`(미리 보기) · `--plan` · `--tree` · 이미 있는 제목은 건너뜀 |
+| to_flowtree.py | 뼈대로 만든 결과 → flowtree 완료 노드로 붙이기(논의 뒤 보강할 때) — `--bundles K0 K3 …` · `--section <값>` · `--map K1=<값> …` · `--graph hand_off\|task` · `--dry`(미리 보기) · `--plan` · `--tree` · 이미 있는 제목은 건너뜀. 값이 섹션 번호 0~8 · 틀 작업 id(`s2-t3` = 그 칸부터) = 새 노드 없이 빈 틀 작업 칸을 위에서부터 fill → start → done(칸이 모자라면 다음 섹션 · 섹션 8 까지 없으면 실패로 남은 묶음 보고) · 값이 그 밖의 노드 id = Main 방식 — 그 밑에 add → start → done · 값이 없으면 «뼈대(skeleton)» 노드를 만들어 그 밑에 |
 | copy_parts.py | lib 부품 → src · tests · 루트 복사(이미 있으면 안 덮음) · import 바꿈 · WORKLOG 덧붙이기 |
 | check.py | 냉시동 한 바퀴 판정 |
 | out/ | 계획표 출력(커밋 안 함) |

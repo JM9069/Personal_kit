@@ -1,4 +1,4 @@
-"""magic.py 시험 — show(main 작업 노드 · 멈춤 / insp 검증 노드만 / 2nd 답변 준비 중) · 답 자리(node · md · code · form)
+"""magic.py 시험 — show(main 작업 · 검증 · 질문 노드 · 멈춤 / 2nd 답변 준비 중) · 답 자리(node · md · code · form)
     python3 -m pytest -q .agents/skills/codex-hub        (임시 작업 폴더 · flowtree 는 키트 devview/flowtree 를 그대로 씀)
 """
 import json
@@ -93,11 +93,11 @@ def test_show_main_work_and_stop(world, capsys, monkeypatch):
     code, out, _ = run(capsys, "show", rid)
     assert code == 0 and "할 일: t1" in out and "맥락: r1" in out and "flowtree.py --role main start" in out
     # 구현은 서브에게(세션이 직접 쓰지 않음)
-    assert "내 서브에게 구현을 시킨다" in out and "ADR" not in out.split("할 일:")[1]
+    assert "구현 서브에게 시킨다" in out and "ADR" not in out.split("할 일:")[1]
     assert status_of(world, "main").startswith("❇️_1-2 : 작업. ADR 작업")
     rid = req(world, "main", nodes=[{"id": "r1"}, {"id": "t2"}])
     code, out, _ = run(capsys, "show", rid)
-    assert code == 0 and "멈춤: 고른 노드에 hand_off 작업 노드 없음" in out and "할 일:" not in out
+    assert code == 0 and "멈춤: 고른 노드에 작업 · 검증 · 질문 노드 없음" in out and "할 일:" not in out
 
 
 # 함수 표 · 이름 바뀜 — show 에 함수 표 · «이름 바뀜» · done 뒤 자동 «이름 바꾸기» 작업도 hand_off 작업 노드라 MAIN 마법봉 대상
@@ -117,12 +117,29 @@ def test_show_main_funcs_rename(world, capsys, monkeypatch):
     assert code == 0 and f"할 일: {rid_task}" in out and "이름 바꾸기" in out and "funcs-ack t1" in out
 
 
-def test_show_insp_only_verify(world, capsys):
-    rid = req(world, "insp", nodes=[{"id": "t1"}, {"id": "v1"}])
+# main 마법봉 — 작업 · 검증 · 질문 노드를 종류별 할 일로 나눈다(작업 → 구현 서브 · 검증 → 검증관 · 질문 → 놀고 있는 서브)
+def test_show_main_three_kinds(world, capsys, monkeypatch):
+    monkeypatch.setenv("CODEX_THREAD_ID", TH.replace("8888", "9999"))
+    hub.main(["register", "--nick", "main"])
+    rid = req(world, "main", nodes=[{"id": "t1"}, {"id": "v1"}, {"id": "q1"}])
     code, out, _ = run(capsys, "show", rid)
-    assert code == 0 and "v1 [미검증] tests/test_a.py" in out and "t1 [" not in out.split("대상:")[0] and "verify-start" in out
-    rid = req(world, "insp", nodes=[{"id": "t1"}])
-    assert "검증 노드 없음" in run(capsys, "show", rid)[1]
+    assert code == 0 and "v1 [미검증] tests/test_a.py" in out and "q1 [" in out and "멈춤" not in out
+    assert "할 일: t1 — " in out and "구현 서브에게 시킨다" in out
+    assert "검증 할 일: v1 — 검증관에게 고정 양식" in out and "--role insp verify-start" in out
+    assert "질문 할 일: q1 — 놀고 있는 서브에게" in out and "--role 2nd answer-start" in out
+    assert status_of(world, "main").startswith("❇️_1-2 : 작업. ADR 작업")
+    # 검증만 · 질문만 — 멈춤 아님 · 작업 할 일 없음
+    code, out, _ = run(capsys, "show", req(world, "main", nodes=[{"id": "v1"}]))
+    assert code == 0 and "검증 할 일: v1" in out and "멈춤" not in out and "\n할 일:" not in out and "질문 할 일" not in out
+    assert status_of(world, "main").startswith("확인 : 마법봉 v1")
+    code, out, _ = run(capsys, "show", req(world, "main", nodes=[{"id": "q1"}]))
+    assert code == 0 and "질문 할 일: q1" in out and "멈춤" not in out and "검증 할 일" not in out
+
+
+# INSP 세션은 없다 — 옛 insp 요청은 역할 모름
+def test_show_insp_role_gone(world, capsys):
+    code, _, err = run(capsys, "show", req(world, "insp", nodes=[{"id": "v1"}]))
+    assert code == 1 and "역할 모름: insp" in err
 
 
 def test_show_and_answer_node(world, capsys):

@@ -268,7 +268,12 @@ def stepper_fill(w, id, P, note=True):
         title · task(해 보기 한 줄) · caption · fn(각주 — note=True 인 첫 자리에만) · auto_ms
         map(figs.route_map 의 지도 칸) · frame_title(지도 위 제목) · right_title(오른쪽 목록 제목) · words · cap
         steps = [{"state": [[(곳, 수) …] 차마다], "cur": 지금 차(0부터), "text": 단계 글(동작 + 결과 숫자), "row": 표 행 | None}]
-        table = {"header", "rows", "small": True, "bad_cells": [(행, 열)]} | None"""
+        table = {"header", "rows", "small": True, "bad_cells": [(행, 열)]} | None
+    P["kind"] = "quiver" 이면 지도 대신 측정 화살표(figs.quiver_map — 분석 틀 stat_model · steps = [{"dx", "dy", "head", "lines", "text", "row"}])"""
+    if P.get("kind") == "quiver":
+        out = [{"svg": figs.quiver_map(P, st), "text": st["text"], "row": st.get("row")} for st in P["steps"]]
+        return w.stepper(out, title=P["title"], table=P.get("table"), task=P["task"], auto_ms=P.get("auto_ms", 1100), id=id,
+                         caption=P.get("caption"), fn=P.get("fn") if note else None)
     out = []
     for st in P["steps"]:
         lines = vehicle_lines(st["state"], {st["cur"]}, P)
@@ -285,7 +290,12 @@ def stepper_fix(w, id, P):
     """P = shared.py «재생기_고치기» 칸
         title · task · caption · auto_ms · map · right_title · words · measure(경로 → 길이 숫자 · 줄 글의 {km})
         steps = [{"state", "hl": [바뀐 차], "gone": [(차, 곳)](빨간 ×), "head": 지도 위 제목, "text", "row"}]
-        table = {"header", "rows", "small": True}"""
+        table = {"header", "rows", "small": True}
+    P["kind"] = "quiver" 이면 지도 대신 측정 화살표(figs.quiver_map — 잔차 지도 · 단계 "limit" 보다 긴 화살표 빨강)"""
+    if P.get("kind") == "quiver":
+        out = [{"svg": figs.quiver_map(P, st), "text": st["text"], "row": st.get("row")} for st in P["steps"]]
+        return w.stepper(out, title=P["title"], table=P.get("table"), task=P["task"], auto_ms=P.get("auto_ms", 1300), id=id,
+                         caption=P.get("caption"))
     out = []
     for st in P["steps"]:
         hl = set(st.get("hl", ()))
@@ -302,7 +312,15 @@ def stepper_fix(w, id, P):
 def stepper_chain(w, id, P):
     """P = shared.py «재생기_이어붙이기» 칸
         title · task · caption · auto_ms · timetable(figs.timetable 의 시간표 칸 — steps 포함)
-        heads = [단계마다 그림 위 제목] + [정리 그림 제목] · texts = [단계마다 글] + [정리 글]  (둘 다 길이 = 단계 수 + 1)"""
+        heads = [단계마다 그림 위 제목] + [정리 그림 제목] · texts = [단계마다 글] + [정리 글]  (둘 다 길이 = 단계 수 + 1)
+    P["kind"] = "chart" 이면 시간표 대신 관리도(P["chart"] = figs.control_chart 칸 — 분석 틀 stat_model)"""
+    if P.get("kind") == "chart":
+        Ch = P["chart"]
+        n = len(Ch["steps"])
+        if len(P["heads"]) != n + 1 or len(P["texts"]) != n + 1:
+            raise ValueError(f"관리도 재생기: heads · texts 는 단계 수 + 1 = {n + 1}개여야 한다(지금 {len(P['heads'])} · {len(P['texts'])})")
+        out = [{"svg": figs.control_chart(Ch, k, P["heads"][k]), "text": P["texts"][k], "row": None} for k in range(n + 1)]
+        return w.stepper(out, title=P["title"], task=P["task"], auto_ms=P.get("auto_ms", 1300), id=id, caption=P.get("caption"))
     T = P["timetable"]
     n = len(T["steps"])
     if len(P["heads"]) != n + 1 or len(P["texts"]) != n + 1:

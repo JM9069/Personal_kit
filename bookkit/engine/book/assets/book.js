@@ -8,6 +8,8 @@ const store={get(k){try{return localStorage.getItem(KP+k)}catch(e){return null}}
 const $=id=>document.getElementById(id);
 const book=$('book'), stage=$('stage'), rail=$('rail'), spMake=$('spMake'), layer=$('notes');
 const bMode=$('bMode'), bRail=$('bRail'), bMemo=$('bMemo'), src=$('bksrc'), toastEl=$('toast'), chip=$('chip');
+// 아래 질문 줄(두 페이지) — 예전 빌드 html 에는 자리가 없어 여기서 만든다(«예시 데이터 만든 과정» 위)
+const spQa=$('spQa')||(()=>{const e=document.createElement('div');e.id='spQa';e.className='mk qa';e.hidden=true;spMake.before(e);return e;})();
 const ICON={one:'<svg viewBox="0 0 24 24"><rect x="6" y="3" width="12" height="18" rx="1.5"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="9" y1="12" x2="15" y2="12"/></svg>',
             two:'<svg viewBox="0 0 24 24"><path d="M2 5h7a3 3 0 0 1 3 3v12a2 2 0 0 0-2-2H2z"/><path d="M22 5h-7a3 3 0 0 0-3 3v12a2 2 0 0 1 2-2h8z"/></svg>'};
 const qs=new URLSearchParams(location.search);
@@ -135,7 +137,7 @@ function makeBlock(el,parts){
 document.addEventListener('click',e=>{
   const h=e.target.closest('.mk .mkh');if(!h)return;
   const el=h.parentElement;if(el.classList.contains('empty'))return;
-  el.classList.toggle('open');store.set('mk',el.classList.contains('open')?'1':'0');
+  el.classList.toggle('open');store.set(el.classList.contains('qa')?'qa':'mk',el.classList.contains('open')?'1':'0');
 });
 function fitScale(){
   const bw=book.clientWidth;if(!bw)return;
@@ -262,6 +264,31 @@ bRail.addEventListener('click',()=>setRail(document.body.classList.contains('nor
 (()=>{const h=$('bHome');if(!h||window.parent===window)return;
   h.title='책 목록 보이기 · 숨기기';h.setAttribute('aria-label','책 목록 보이기 · 숨기기');
   h.addEventListener('click',e=>{e.preventDefault();window.parent.postMessage({book:'toggle-list'},'*');});})();
+// devview Book 탭 안 — 다른 출처라 iframe 안 키가 부모로 안 올라간다. Alt+Q · W · B 를 부모에 넘기고, 부모의 {book:'wand'} 로 고른 메모의 🪄 를 누른다
+(()=>{if(window.parent===window)return;
+  const own=el=>{const t=el&&el.closest&&el.closest('.note,.qr');return t&&(t._n||t.classList.contains('qr'))?t:null;};
+  const idOf=t=>t._n?t._n.id:t.dataset.id;
+  let pick=null;  // 마지막으로 누른 메모 · 질문 줄의 id
+  addEventListener('pointerdown',e=>{const t=own(e.target);if(t)pick=idOf(t);},true);
+  // devview 단축키 — 마법봉 Alt+Q · W · Book Alt+B · 그래프 화면 Alt+` · 0~8 은 devview 로 넘김 / 기호 Alt+Z · X · C · V 는 이 책의 입력 칸에 넣음
+  const HOT=['KeyQ','KeyW','KeyB','Backquote','Digit0','Digit1','Digit2','Digit3','Digit4','Digit5','Digit6','Digit7','Digit8'];
+  const SYM={KeyZ:'❇️',KeyX:'🔎',KeyC:'💭',KeyV:'📌'};
+  addEventListener('keydown',e=>{
+    if(!e.altKey||e.ctrlKey||e.metaKey||e.shiftKey||e.isComposing)return;
+    const t=document.activeElement;
+    if(SYM[e.code]&&t&&(t.tagName==='TEXTAREA'||t.tagName==='INPUT')){e.preventDefault();e.stopPropagation();t.setRangeText(SYM[e.code],t.selectionStart,t.selectionEnd,'end');t.dispatchEvent(new Event('input',{bubbles:true}));return;}
+    if(!HOT.includes(e.code))return;
+    e.preventDefault();e.stopPropagation();window.parent.postMessage({book:'key',code:e.code},'*');
+  },true);
+  addEventListener('message',e=>{
+    if(e.source!==window.parent||!e.data||e.data.book!=='wand')return;
+    const a=own(document.activeElement),id=a?idOf(a):pick;
+    const t=a||[...document.querySelectorAll('.note,.qr')].find(x=>own(x)&&idOf(x)===id&&!x.hidden);
+    if(!t||(!a&&!id)){toast('메모를 고르지 않음');return;}
+    const w=t.querySelector('.nw');
+    if(!w||w.hidden){toast('접수 뒤 보낼 수 있음');return;}
+    w.click();
+  });})();
 bMode.addEventListener('click',()=>setMode(mode===2?1:2));
 $('bTop').addEventListener('click',()=>goPage(0,true));
 new ResizeObserver(()=>{fitScale();clearTimeout(fitScale._t);fitScale._t=setTimeout(renderNotes,120);}).observe(stage);
@@ -331,14 +358,14 @@ function draw(n,draft){
     try{
       const r=await fetch(API+'/'+n.id+'/magic',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}',credentials:'same-origin'});
       const d=await r.json().catch(()=>({}));
-      if(r.ok){n.magic_rid=d.rid;msg.textContent='보냄 · 2ND 답 대기';}
+      if(r.ok){n.magic_rid=d.rid;msg.textContent='보냄 · 2ND 답 대기';startPoll();}
       else{msg.classList.remove('ok');msg.textContent=/미연결|thread 없음/.test(d.error||'')?'2ND 미연결':r.status===409?'이미 보냄 · 답 대기':'보내기 실패';}
     }catch(e){msg.classList.remove('ok');msg.textContent='보내기 실패';}
     finally{wand.disabled=false;}
   });
   el.append(draft?ta:b,msg);
-  // 답(2ND 서브가 bookkit/notes.py answer 로 단 것) — 질문 아래 초록 칸
-  if(n.answer){const an=document.createElement('div');an.className='na';const ah=document.createElement('b');ah.textContent='답'+(n.answer_ts?' · '+n.answer_ts.slice(5,16):'');an.append(ah,document.createTextNode(n.answer));el.appendChild(an);t.textContent='답함 · '+(n.ts||'').slice(5,16);}
+  // 답이 달린 스티커는 여기 그리지 않는다(아래 질문 줄 행) — 보낸 뒤 답 대기만 표시
+  if(!draft&&n.magic_rid){msg.hidden=false;msg.classList.add('ok');msg.textContent='보냄 · 2ND 답 대기';}
   el.appendChild(f);send.textContent=draft?'접수':'수정';
   if(draft)setTimeout(()=>ta.focus(),0);
   send.addEventListener('click',async()=>{
@@ -380,9 +407,112 @@ function draw(n,draft){
 function renderNotes(){
   if(!pages.length)return;
   layer.querySelectorAll('.note').forEach(el=>{if(el.querySelector('textarea')&&!el._n.id){place2(el,el._n);return;}el.remove();});
-  notes.forEach(n=>draw(n,false));
+  notes.forEach(n=>{if(!n.answer)draw(n,false);});  // 답 달린 것은 아래 질문 줄로
+  renderQa();
 }
-async function loadNotes(){try{notes=await api('GET',API+'?doc='+encodeURIComponent(DOC));renderNotes();report.notes=notes.length;}catch(e){report.notes_error=String(e.message||e);}}
+
+// ════════ 아래 질문 줄 — 답 달린 스티커를 지금 펼친 쪽(한 페이지 = 그 쪽) 것만 행으로. 행 안에서 꼬리 질문 + 🪄 ════════
+const openRows=new Set(), qDraft=new Map(), qMsg=new Map();
+let qaDirty=false;
+const pageOfNote=n=>{const b=blockOfNote(n);return b?pageOf.get(b.dataset.id):(n.slide||1)-1;};
+const titleOf=n=>{const t=String(n.title||'').trim();if(t)return t;const q=String(n.text||'').replace(/\s+/g,' ').trim();return q.length>30?q.slice(0,30)+'…':q;};
+function qItem(cls,head,text){const d=document.createElement('div');d.className='qx '+cls;const b=document.createElement('b');b.textContent=head;d.append(b,document.createTextNode(text||''));return d;}
+function qaRow(n,k){
+  const r=document.createElement('div');r.className='qr'+(openRows.has(n.id)?' open':'');r.dataset.id=n.id;
+  const h=document.createElement('button');h.type='button';h.className='qrh';h.textContent='Q'+k+'. '+titleOf(n);h.title=n.text||'';
+  h.addEventListener('click',()=>{r.classList.toggle('open');if(r.classList.contains('open'))openRows.add(n.id);else openRows.delete(n.id);});
+  const b=document.createElement('div');b.className='qrb';
+  b.append(qItem('qaq','질문 · '+(n.ts||'').slice(5,16),n.text),qItem('qan','답'+(n.answer_ts?' · '+n.answer_ts.slice(5,16):''),n.answer));
+  (n.thread||[]).forEach(t=>{if(!t||typeof t!=='object')return;
+    const d=document.createElement('div');d.className='qt';d.dataset.t=t.id;
+    d.appendChild(qItem('qaq','꼬리 질문 · '+(t.ts||'').slice(5,16),t.q));
+    if(t.a)d.appendChild(qItem('qan','답'+(t.a_ts?' · '+t.a_ts.slice(5,16):''),t.a));
+    else{const w=document.createElement('p');w.className='qwait';w.textContent=t.magic_rid?'2ND 답 대기':'미전송';d.appendChild(w);}
+    b.appendChild(d);});
+  const f=document.createElement('div');f.className='qf';
+  const ta=document.createElement('textarea');ta.placeholder='꼬리 질문';ta.maxLength=2000;ta.value=qDraft.get(n.id)||'';
+  ta.addEventListener('input',()=>qDraft.set(n.id,ta.value));
+  const w=document.createElement('button');w.type='button';w.className='nw';w.textContent='🪄';w.title='마법봉 — 2ND 에 꼬리 질문';w.setAttribute('aria-label','마법봉');
+  f.append(ta,w);
+  const msg=document.createElement('p');msg.className='qe';const m0=qMsg.get(n.id);msg.hidden=!m0;if(m0){msg.textContent=m0.t;msg.classList.toggle('ok',!!m0.ok);}
+  w.addEventListener('click',()=>askThread(n,ta,w));
+  // 지우기 — 스티커의 × 와 같은 DELETE(질문 · 답 · 꼬리 모두)
+  const x=document.createElement('button');x.type='button';x.className='qdel';x.textContent='지우기';x.title='이 질문 지우기';f.appendChild(x);
+  x.addEventListener('click',async()=>{try{await api('DELETE',API+'/'+n.id);notes=notes.filter(m=>m.id!==n.id);openRows.delete(n.id);renderQa();}
+    catch(e){qMsg.set(n.id,{t:'지우기 실패',ok:false});renderQa();}});
+  b.append(f,msg);r.append(h,b);
+  return r;
+}
+async function askThread(n,ta,w){
+  const say=(t,ok)=>{qMsg.set(n.id,{t,ok});renderQa();};
+  const q=ta.value.trim();let t=null;
+  w.disabled=true;
+  try{
+    if(q){Object.assign(n,await api('POST',API+'/'+n.id+'/thread',{q}));t=n.thread[n.thread.length-1];qDraft.delete(n.id);}
+    else t=(n.thread||[]).filter(x=>x&&!x.a&&!x.magic_rid).pop()||null;  // 빈 칸 + 미전송 꼬리 = 다시 보내기
+    if(!t){w.disabled=false;ta.focus();return;}
+  }catch(e){w.disabled=false;say('접수 실패',false);return;}
+  try{
+    const r=await fetch(API+'/'+n.id+'/thread/'+t.id+'/magic',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}',credentials:'same-origin'});
+    const d=await r.json().catch(()=>({}));
+    if(r.ok){t.magic_rid=d.rid;say('보냄 · 2ND 답 대기',true);startPoll();}
+    else say(/미연결|thread 없음/.test(d.error||'')?'2ND 미연결':r.status===409?'이미 보냄 · 답 대기':'보내기 실패',false);
+  }catch(e){say('보내기 실패',false);}
+}
+function fillQa(el,list){
+  if(!list.length){el.hidden=true;el.innerHTML='';return;}
+  el.hidden=false;el.classList.toggle('open',store.get('qa')!=='0');
+  el.innerHTML='<div class="mkh"><span class="sw"></span><span></span></div><div class="mkb"></div>';
+  el.querySelector('.mkh span:last-child').textContent='질문 '+list.length;
+  const body=el.querySelector('.mkb');list.forEach((n,i)=>body.appendChild(qaRow(n,i+1)));
+}
+function renderQa(){
+  if(!pages.length)return;
+  const done=notes.filter(n=>n.answer).sort((a,b)=>String(a.ts||'').localeCompare(String(b.ts||'')));
+  if(mode===2){fillQa(spQa,done.filter(n=>Math.floor(pageOfNote(n)/2)===cur));pages.forEach(p=>{if(p._qa){p._qa.hidden=true;p._qa.innerHTML='';}});}
+  else{spQa.hidden=true;spQa.innerHTML='';pages.forEach((p,i)=>{if(p._qa)fillQa(p._qa,done.filter(n=>pageOfNote(n)===i));});}
+}
+// 답 대기(원 질문 · 꼬리)가 있으면 4초마다 다시 읽는다 — 답이 달리면 스티커가 질문 줄로 옮겨진다
+let pollT=null;
+const pendingNotes=()=>notes.some(n=>(n.magic_rid&&!n.answer)||(n.thread||[]).some(t=>t&&t.magic_rid&&!t.a));
+// 쓰는 중(꼬리 질문 칸 포커스 · 고치는 중인 스티커) — 그동안은 다시 그리지 않고 다음 차례로 미룬다
+const editingNow=()=>{const a=document.activeElement;return !!(a&&a.matches&&a.matches('.qf textarea'))||[...layer.querySelectorAll('.note textarea')].some(x=>x.closest('.note')._n.id);};
+function startPoll(){if(!pollT&&pendingNotes())pollT=setInterval(poll,4000);}
+async function poll(){
+  if(qaDirty&&!editingNow()){qaDirty=false;renderNotes();}
+  if(document.visibilityState==='visible'){
+    let fresh=null;try{fresh=await api('GET',API+'?doc='+encodeURIComponent(DOC));}catch(e){}
+    if(fresh&&JSON.stringify(fresh)!==JSON.stringify(notes)){
+      // 같은 id 는 같은 객체에 덮어쓴다(그려 둔 스티커가 들고 있는 객체 그대로)
+      const byId=new Map(notes.map(x=>[x.id,x]));
+      notes=fresh.map(f=>{const e=byId.get(f.id);if(!e)return f;Object.keys(e).forEach(k=>{if(!(k in f))delete e[k];});return Object.assign(e,f);});
+      report.notes=notes.length;if(editingNow())qaDirty=true;else renderNotes();
+    }
+  }
+  if(!pendingNotes()&&!qaDirty){clearInterval(pollT);pollT=null;}
+}
+// 주소 #note=<스티커 id>[&t=<꼬리 id>] — 그 쪽으로 넘기고 질문 줄에서 그 행을 펼친다(답 전이면 스티커를 보인다)
+function noteHash(){let h=location.hash.slice(1);try{h=decodeURIComponent(h);}catch(e){}if(!h.startsWith('note='))return null;const u=new URLSearchParams(h);return {id:u.get('note')||'',t:u.get('t')||''};}
+function openNoteHash(){
+  const q=noteHash();if(!q)return false;
+  const n=notes.find(x=>x.id===q.id);if(!n){toast('스티커 없음');return true;}
+  const pi=pageOfNote(n);
+  if(n.answer){openRows.add(n.id);store.set('qa','1');}
+  if(pi>=0&&pi<pages.length)goPage(pi,false);
+  renderNotes();
+  requestAnimationFrame(()=>{
+    let el=null;
+    if(n.answer){const panel=mode===2?spQa:(pages[pi]&&pages[pi]._qa);const row=panel&&panel.querySelector('.qr[data-id="'+CSS.escape(n.id)+'"]');
+      el=row&&((q.t&&row.querySelector('.qt[data-t="'+CSS.escape(q.t)+'"]'))||row);}
+    else el=[...layer.querySelectorAll('.note')].find(e=>e._n&&e._n.id===n.id)||null;
+    if(!el)return;
+    el.scrollIntoView({block:'center'});
+    if(n.answer){el.classList.remove('flash');void el.offsetWidth;el.classList.add('flash');}
+  });
+  report.noteHash=q;
+  return true;
+}
+async function loadNotes(){try{notes=await api('GET',API+'?doc='+encodeURIComponent(DOC));renderNotes();report.notes=notes.length;openNoteHash();startPoll();}catch(e){report.notes_error=String(e.message||e);}}
 
 // ════════ 조작 블록 — 단계 재생기 · 조건 슬라이더 · 크게 열기 ════════
 // 첫 화면은 빌드가 HTML 로 이미 그려 뒀다. 여기서는 블록 안 script.lvdata(미리 계산한 그림 · 지표)를 읽어 골라 보이기만 한다 — 새로 계산하지 않는다
@@ -541,7 +671,8 @@ async function init(){
   const meas=document.createElement('div');meas.className='measure';document.body.appendChild(meas);
   pages=paginate(meas);
   finish();
-  pages.forEach(p=>{book.insertBefore(p,layer);const m=document.createElement('div');m.className='mk mk1';makeBlock(m,mkOf(p));book.insertBefore(m,layer);});
+  pages.forEach(p=>{book.insertBefore(p,layer);const m=document.createElement('div');m.className='mk mk1';makeBlock(m,mkOf(p));book.insertBefore(m,layer);
+    const q=document.createElement('div');q.className='mk qa qa1';q.hidden=true;p._qa=q;book.insertBefore(q,m);});  // 한 페이지 — 그 쪽 질문 줄
   meas.remove();
   NS=Math.ceil(pages.length/2);
   const ld=$('loading');if(ld)ld.remove();
@@ -555,7 +686,7 @@ async function init(){
   setMode(mode);
   if(mode===1)requestAnimationFrame(()=>goPage(start));
   if(ht){ht.classList.add('flash');report.hash=ht.dataset.id;}
-  addEventListener('hashchange',()=>{const t=hashTarget();if(!t)return;goBlock(t.dataset.id,false);t.classList.remove('flash');void t.offsetWidth;t.classList.add('flash');});
+  addEventListener('hashchange',()=>{if(openNoteHash())return;const t=hashTarget();if(!t)return;goBlock(t.dataset.id,false);t.classList.remove('flash');void t.offsetWidth;t.classList.add('flash');});
   report.ms=Math.round(performance.now()-t0);report.ready=true;
   report.go=(i)=>goPage(i);report.mode=()=>mode;report.cur=()=>curIndex();report.setMode=(m)=>setMode(m);
   document.body.dataset.paged='1';

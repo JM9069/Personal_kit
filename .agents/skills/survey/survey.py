@@ -9,7 +9,11 @@
 #   python3 ~/.codex/skills/survey/survey.py wait 설문id               제출될 때까지 조용히 대기 → 결과 json 출력
 #   python3 ~/.codex/skills/survey/survey.py result 설문id             결과 조회(제출 전이면 pending)
 #   devview 안에서는 위쪽 «설문» 탭이 같은 화면을 보여 준다(devview 가 이 파일을 불러와 /sv/ 아래로 연결)
-#   제출 · 취소되면 설문을 등록한 Codex 세션(CODEX_THREAD_ID · --thread)에 codex queue 로 «@설문 ---설문 완료 · id» 를 넣음
+#   제출되면 확정 문항(선택지 · 기타 · 표 O)은 MAIN · 질문 문항은 2ND 에 허브 마법봉(🪄 · $main-magic / $2nd-magic)으로 한 번씩
+#     허브 = devview/codex_hub.py magic(view survey) · 받을 세션 없음 · queue 실패는 결과 route 칸 → 설문 화면 맨 위 빨간 줄
+#     new --no-route(또는 질문 파일 "route": false) = 보내지 않음(설명 · 보고용)
+#   취소 · 보내지 않음 · 보낸 문항 없음 · 남은 문항(메모 있는 보류 · 보내지 못한 문항 · MAIN 에 못 실은 추가 지시)이 있으면
+#     설문을 등록한 Codex 세션(CODEX_THREAD_ID · --thread)에 codex queue 로 «@설문 ---설문 완료 · id» 를 넣음(등록 세션이 이번에 받은 MAIN · 2ND 면 생략)
 #     끄기 = 서버 쪽 환경변수 SURVEY_NO_QUEUE=1 · codex 를 못 찾거나 실패하면 조용히 넘어감(결과 파일은 그대로)
 #
 # 저장: <저장소>/docs/surveys/<프로젝트>/설문id.json · 설문id.result.json — 저장소 안이라 커밋하면 기록으로 남음
@@ -83,6 +87,14 @@ ASK_OLD = "질문·논의"
 FIXED = (OTHER, OTHER_OLD, HOLD, ASK, ASK_OLD)
 # 설문 맨 끝 추가 지시 칸의 폼 이름
 EXTRA = "extra"
+# 제출 때 문항 답 종류 → 받을 세션(허브 마법봉) — 확정(선택지 · 기타 · 표 O) = MAIN · 질문 = 2ND
+#   그 밖(보류 · 표 X · 미선택 · 설명 메모)은 보내지 않음 — 메모가 있으면 등록 세션 알림이 맡음
+ROUTE_KINDS = {"option": "main", "other": "main", "target": "main", "ask": "2nd"}
+# 허브 모듈(devview/codex_hub.py) · 작업 폴더 — devview 가 불러 줄 때 넣어 줌. 비어 있으면 저장 폴더 위로 .codex-hub 를 찾음
+HUB = None
+HUB_ROOT = None
+# 따로 불러온 허브 모듈(경로 → 모듈)
+_HUB_MODS = {}
 # 주소에서 설문 id 를 찾는 패턴 — 앞에 프록시 접두어가 붙어도 찾게 끝부분만 봄
 SURVEY_PATH = re.compile(r"survey/([0-9A-Za-z_-]+)/?$")
 # 목록 줄 — «- » · «* »(앞 공백 · 탭 = 들여쓰기)
@@ -131,6 +143,10 @@ h1{font-size:24px;margin:0 0 4px}
 .q{background:#15233b;border:1px solid #2f4a78;border-radius:12px;padding:18px 20px;margin:0 0 24px}
 .qh{font-weight:700;font-size:21px;margin-bottom:12px;word-break:keep-all;overflow-wrap:anywhere}
 .qid{color:#8ab4f8;margin-right:6px}
+.route{margin:0 0 16px}
+.rt{border-radius:8px;padding:6px 12px;margin:0 0 6px;font-size:15px;overflow-wrap:anywhere}
+.rt.ok{background:#15321f;border:1px solid #34a853;color:#c8e6c9}
+.rt.fail{background:#3a1c1c;border:1px solid #e06c6c;color:#f28b82}
 .box{display:block;border-radius:12px;padding:10px 14px;margin:0 0 12px;overflow-wrap:anywhere}
 .bt{display:block;font-weight:700;font-size:15px;margin-bottom:2px}
 .decide{background:#2a2045;border:1px solid #9d7bea}
@@ -935,6 +951,30 @@ def render_pane(key, project, sid) -> tuple:
         return "설문 없음", "<div class='empty'>설문 없음</div>"
     # 쓰던 답 — 제출 전일 때만
     draft = read_json(draft_file(folder, sid)) if res is None else None
+    # 제출 때 MAIN · 2ND 전송 결과(성공 초록 · 실패 빨강) — 본문 맨 위
+    title, body = render_pane_body(item, res, draft, key, project, sid)
+    return title, route_html(res) + body
+
+
+# MAIN · 2ND 전송 결과 줄 HTML — 결과 route 칸(없으면 빈 글)
+# res: 결과(dict) 또는 None
+def route_html(res) -> str:
+    # 전송 줄 목록
+    rows = (res or {}).get("route") or []
+    out = []
+    for r in rows:
+        if r.get("ok"):
+            out.append(f"<div class='rt ok'>{html.escape(str(r.get('to')))} 전송 · 문항 {r.get('count')}개 · 요청 "
+                       f"{html.escape(str(r.get('request') or '-'))}</div>")
+        else:
+            out.append(f"<div class='rt fail'>{html.escape(str(r.get('to')))} 전송 실패 · 문항 {r.get('count')}개 — "
+                       f"{html.escape(str(r.get('error') or '원인 없음'))}</div>")
+    return f"<div class='route' id='route'>{''.join(out)}</div>" if out else ""
+
+
+# 오른쪽 본문 HTML 중 폼 부분 — 표 폼 · 설문 · 설명 폼
+# item: 설문 / res: 결과 / draft: 쓰던 답 / key · project · sid: 고른 것
+def render_pane_body(item, res, draft, key, project, sid) -> tuple:
     if item.get("mode") == TABLE:
         return item["title"], render_grid(item["title"], item.get("columns") or [], item["questions"], res, draft,
                                           target_query(key, project, sid), item.get("intro", ""))
@@ -1067,20 +1107,22 @@ def serve_img(q: dict) -> tuple:
 # 설문을 등록한 Codex 세션에 완료 알림 — codex queue 를 따로 띄우고 기다리지 않음
 #   대상 세션이 작업 중이면 그 작업이 끝난 뒤 다음 메시지로 들어감(10/31 유저 실측)
 # item: 설문 내용 / sid: 설문 id / cancel: 취소면 True
+# head: codex 실행 명령 앞부분(허브가 찾은 것 — 윈도우 node + codex.js · 시험용 DEVVIEW_CODEX) · 없으면 PATH 의 codex
 # 반환: 띄운 명령(인자 목록) 또는 None(알릴 곳 없음 · 꺼짐 · codex 없음 · 실패)
-def notify_thread(item: dict, sid: str, cancel: bool):
-    # 대상 세션 / codex 실행 파일
-    thread, exe = item.get("thread") or "", shutil.which("codex")
+def notify_thread(item: dict, sid: str, cancel: bool, head=None):
+    # 대상 세션 / codex 실행 명령 앞부분
+    thread = item.get("thread") or ""
+    exe = list(head) if head else ([shutil.which("codex")] if shutil.which("codex") else None)
     if not thread or os.environ.get("SURVEY_NO_QUEUE") == "1" or not exe:
         return None
     # 넣을 메시지 — 받은 세션이 바로 result 를 부르게 · 앞 «@설문 » = 유저 지시가 아님(devview 대화 탭 · 채점 기록에서 구별)
     msg = (f"@설문 ---설문 {'취소' if cancel else '완료'} · {sid} · {item.get('title', '')} → "
            f"python3 ~/.codex/skills/survey/survey.py result {sid}")
     # 명령 — 글이 옵션으로 읽히지 않게 = 로 붙임
-    cmd = [exe, "queue", "--thread", thread, f"--message={msg}"]
+    cmd = [*exe, "queue", "--thread", thread, f"--message={msg}"]
     try:
         subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                         **({"start_new_session": True} if os.name != "nt" else {}))
+                         **({"start_new_session": True} if os.name != "nt" else {"creationflags": 0x08000000}))
     except OSError as e:
         print(f"설문 완료 알림 실패 · {sid} · {e}", file=sys.stderr)
         return None
@@ -1106,13 +1148,108 @@ def submit(q: dict, body: bytes, up: str) -> tuple:
     # 결과 공통 머리
     head = {"id": sid, "title": item["title"], "project": item.get("project", q.get("p")),
             "submitted": time.strftime("%Y-%m-%d %H:%M:%S")}
+    # 허브(MAIN · 2ND 전송 · codex 실행 명령)
+    hub, root, why = find_hub(st)
     if form.get("_act") == "cancel":
-        write_json(result_file(folder, sid), {**head, "action": "cancel", "answers": [], "extra": ""})
+        res = {**head, "action": "cancel", "answers": [], "extra": ""}
     else:
-        write_json(result_file(folder, sid), {**head, **collect(item["questions"], form, item.get("mode", "survey"))})
+        res = {**head, **collect(item["questions"], form, item.get("mode", "survey"))}
+    # 결과 파일을 먼저 씀 — 받은 세션이 바로 result 를 부름
+    write_json(result_file(folder, sid), res)
     draft_file(folder, sid).unlink(missing_ok=True)
-    notify_thread(item, sid, form.get("_act") == "cancel")
+    # 확정 문항 → MAIN · 질문 문항 → 2ND(취소 · 보내지 않음 설문은 등록 세션 알림만)
+    route, need = ([], True) if res["action"] == "cancel" or item.get("no_route") else route_result(item, res, st, hub, root, why)
+    if route:
+        write_json(result_file(folder, sid), {**res, "route": route})
+    if need:
+        notify_thread(item, sid, res["action"] == "cancel", hub.codex_cmd()[0] if hub is not None else None)
     return reply(303, "", {"Location": up + target_query(q["s"], q["p"], sid)})
+
+
+# 허브 찾기 — (허브 모듈, 작업 폴더, 못 찾은 이유)
+#   devview 가 넣어 준 HUB · HUB_ROOT → CODEX_HUB_DIR(.codex-hub 경로) → 저장 폴더부터 위로 .codex-hub 가 있는 곳
+# store: 설문 저장 폴더
+def find_hub(store: Path):
+    if HUB_ROOT:
+        root = Path(HUB_ROOT)
+    elif os.environ.get("CODEX_HUB_DIR"):
+        root = Path(os.environ["CODEX_HUB_DIR"]).expanduser().parent
+    else:
+        # 저장 폴더와 그 위 폴더들
+        base = Path(store).resolve()
+        root = next((d for d in (base, *base.parents) if (d / ".codex-hub").is_dir()), None)
+    if root is None:
+        return None, None, "허브 없음(.codex-hub) — MAIN · 2ND 가 $codex-hub 로 등록해야 보냄"
+    if HUB is not None:
+        return HUB, root, None
+    # 작업 폴더의 허브 도구
+    p = root / "devview" / "codex_hub.py"
+    if not p.is_file():
+        return None, root, f"허브 도구 없음({p})"
+    if str(p) not in _HUB_MODS:
+        try:
+            import importlib.util
+            spec = importlib.util.spec_from_file_location("survey_codex_hub", p)
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+        except Exception as e:  # noqa: BLE001 — 불러오기 실패는 전송 실패로 표시
+            return None, root, f"허브 도구 불러오기 실패 — {e}"
+        _HUB_MODS[str(p)] = mod
+    return _HUB_MODS[str(p)], root, None
+
+
+# 제출 결과 → 확정 문항은 MAIN · 질문 문항은 2ND 에 허브 마법봉(codex_hub.magic · view survey)으로 한 번씩
+#   반환 (전송 줄 목록, 등록 세션 알림이 필요한가)
+#   등록 세션 알림 = 보낸 문항이 없을 때 · 보내지 못한 문항 · 메모가 남은 미전송 문항 · MAIN 에 못 실은 추가 지시가 있을 때
+#   — 단 등록 세션이 이번에 받은 세션(MAIN · 2ND)이면 생략(같은 세션에 두 번 가지 않게)
+# item: 설문 / res: 결과 / store: 저장 폴더 / hub · root · why: find_hub 결과
+def route_result(item: dict, res: dict, store: Path, hub, root, why):
+    # 답 목록 · 받을 세션별 문항
+    answers = res.get("answers") or []
+    groups = {"main": [], "2nd": []}
+    for a in answers:
+        to = ROUTE_KINDS.get(a.get("kind"))
+        if to:
+            groups[to].append({"id": a.get("id", ""), "question": a.get("question", ""), "kind": a["kind"],
+                               "text": a.get("text") or a.get("memo") or ""})
+    if not groups["main"] and not groups["2nd"]:
+        return [], True
+    # 남은 일 — 보내지 않는 문항 중 메모가 있는 것 · MAIN 에 못 실은 추가 지시
+    left = any(not ROUTE_KINDS.get(a.get("kind")) and (a.get("memo") or "").strip() for a in answers)
+    extra_left = bool((res.get("extra") or "").strip())
+    # 전송 줄 · 받은 세션 thread
+    rows, got = [], set()
+    for to in ("main", "2nd"):
+        if not groups[to]:
+            continue
+        row = {"to": "MAIN" if to == "main" else "2ND", "count": len(groups[to]),
+               "items": [x["id"] for x in groups[to]]}
+        if hub is None:
+            row.update(ok=False, error=why)
+        else:
+            sel = {"survey": {"id": item.get("id") or res.get("id"), "title": item.get("title", ""),
+                              "project": res.get("project") or "", "dir": str(store)},
+                   "items": groups[to], "extra": res.get("extra", "") if to == "main" else ""}
+            # 2ND 질문 글 — 설명 폼 제목 · 상태 줄에 쓰임
+            ask = f"설문 ‹{item.get('title', '')}› 질문 {len(groups[to])}개 — " + " · ".join(x["text"] for x in groups[to])
+            try:
+                r = hub.magic(str(root), {"nick": to, "view": "survey", "selection": sel,
+                                          "question": ask[:2000] if to == "2nd" else ""})
+                row.update(ok=True, request=r.get("id"))
+                if r.get("thread"):
+                    got.add(r["thread"])
+                if to == "main":
+                    extra_left = False
+            except Exception as e:  # noqa: BLE001 — 허브 오류(미연결 · queue 실패)는 화면에 표시
+                row.update(ok=False, error=str(e))
+                print(f"설문 전송 실패 · {res.get('id')} · {row['to']} · {e}", file=sys.stderr)
+        if not row["ok"]:
+            left = True
+        rows.append(row)
+    need = left or extra_left
+    if need and item.get("thread") and item["thread"] in got:
+        need = False
+    return rows, need
 
 
 # 쓰던 답 저장 — 화면이 입력할 때마다 폼 값을 보냄. 제출 전 설문에만
@@ -1332,13 +1469,16 @@ def cmd_new(args) -> int:
                                           "mode": spec.get("mode", "survey"), "intro": spec.get("intro", ""),
                                           # 완료 알림을 받을 세션 — 인자 → Codex 가 넣어 주는 환경변수
                                           "thread": args.thread or os.environ.get("CODEX_THREAD_ID", ""),
+                                          # 보내지 않음 — 제출 때 MAIN · 2ND 전송 없이 등록 세션 알림만(설명 · 보고용 설문)
+                                          **({"no_route": True} if args.no_route or spec.get("route") is False else {}),
                                           **({"columns": [str(c) for c in spec.get("columns") or []]}
                                              if spec.get("mode") == TABLE else {})})
     print(json.dumps({"id": sid, "project": project, "path": "/" + target_query(store_key(store), project, sid),
                       "questions": len(spec["questions"]), "file": str(survey_file(folder, sid)),
                       # 다음 할 일 — 기다리지 않기(폴링 한 번 = 모델 요청 한 번)를 규칙 문서 대신 여기서 알린다
                       "next": f"기다리지 말 것 — 남은 일을 끝내고 마지막 줄에 «devview 설문 탭(Alt+S) · 질문 {len(spec['questions'])}개» "
-                              f"를 남기고 턴을 끝낸다 → 제출되면 «---설문 완료 · {sid}» 메시지가 들어온다(안 오면 유저 '제출' 한마디) → survey.py result {sid}"},
+                              f"를 남기고 턴을 끝낸다 → 제출되면 확정 문항은 MAIN · 질문 문항은 2ND 에 🪄 로 가고"
+                              f"(보내지 않음 설문 · 남은 문항이 있으면 이 세션에 «---설문 완료 · {sid}» 메시지 · 안 오면 유저 '제출' 한마디) → survey.py result {sid}"},
                      ensure_ascii=False),
           flush=True)
     if args.open:
@@ -1422,6 +1562,8 @@ def main(argv=None) -> int:
         if name == "new":
             p.add_argument("--open", action="store_true", help="등록한 뒤 devview 창에 띄움")
             p.add_argument("--thread", default=None, help="완료 알림을 받을 Codex 세션 UUID(기본 = CODEX_THREAD_ID)")
+            p.add_argument("--no-route", action="store_true",
+                           help="보내지 않음 — 제출 때 MAIN · 2ND 전송 없이 등록 세션 알림만(질문 파일 \"route\": false 와 같음)")
         p.add_argument("--port", type=int, default=DEVVIEW_PORT, help="devview(또는 설문 서버) 포트")
         p.add_argument("--devview", default=None, help="devview.py 경로(꺼져 있으면 이걸 띄움)")
         p.set_defaults(fn=fn)

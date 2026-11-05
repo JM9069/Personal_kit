@@ -1,15 +1,15 @@
 # DOC_GUIDE — 문서마다 무엇 · 언제 읽나 · 쓰는 법
 
-> 세션 시작 때 역할 스킬(main · insp · 2nd)이 한 번 통째로 읽게 한다(그 뒤는 필요한 절만) · 압축 뒤에는 $hand-on 이 다시 안내한다.
+> 세션 시작 때 역할 스킬(main · 2nd)이 한 번 통째로 읽게 한다(그 뒤는 필요한 절만) · 압축 뒤에는 $hand-on 이 다시 안내한다.
 > 늘 지킬 규칙(금지)은 AGENTS.md 에, 쓰는 법 · 언제 읽나는 여기에 둔다(AGENTS 는 매 턴 실려서).
 
 ## 1. 문서 지도 · 별칭
 유저는 파일 이름 대신 별칭으로 말한다.
-- ⭐ **새 흐름 5단계**(정본 docs/flowtree.md 0절): ① 과제 파악 = $ontology(bookkit 책 1차 · 2차판 + ONTOLOGY.md 데이터 지도) ② 의사결정 = 유저와 대화로 hand_off.md 에 결정 · 이유 · 섹션 작업 순서(예정 + 실제) ③ 뼈대 = skeleton(K0 · K3 · K5 바로 · K1 · K2 · K4 는 hand_off 의 파일 · 함수 표를 유저가 확인한 뒤) ④ 구현 방향이 다 잡힌 뒤 처음 flowtree(섹션 = 구현 순서 · 뼈대 = 완료 노드) ⑤ 구현 · 검증 · 질문 = flowtree 노드에서 마법봉
+- ⭐ **새 흐름 5단계**(정본 docs/flowtree.md 0절): ① 과제 파악 = $ontology(bookkit 책 1차 · 2차판 + ONTOLOGY.md 데이터 지도) ② 의사결정 = 유저와 대화로 hand_off.md 에 결정 · 이유 · 섹션 작업 순서(예정 + 실제) ③ 뼈대 = skeleton(K0 · K3 · K5 바로 · K1 · K2 · K4 는 hand_off 의 파일 · 함수 표를 유저가 확인한 뒤) ④ flowtree — 2차판 시점에 쉬운 것만 초안 → 논의 뒤 보강($graph)(섹션 = 구현 순서 · 뼈대 = 완료 노드) ⑤ 구현 · 검증 · 질문 = flowtree 노드에서 마법봉
 - **AGENTS.md** = 전역 정책 — 자동으로 읽힘
 - **docs/WORK_GUIDE.md** = 작업 가이드 · 작업 기준 — 무엇을 기준으로 일하나(12칸). 세션 시작 때 한 번 읽는다
 - **docs/hand_off.md** = hand_off · 결정 문서 · 인수인계 문서 — 결정 · 이유 · 섹션별 설계 상세 · 수정 범위 승인 · 검증 기록 + 섹션 작업 순서(예정 + 실제). 채점 모델이 읽는 문서이자 이것만 읽고 후임자가 이어받을 수 있는 인수인계 문서. 섹션을 구현 · 검증하기 전에 그 섹션을 읽는다. 쓰는 법은 3절, 모양은 docs/examples/hand_off_example.md · 세션 인계 스킬 $hand-off(WORKLOG 인계 칸)와 다르다
-- **docs/flowtree.md** = 작업 그래프 규칙 — 진행 상태 · 할 일의 정본(구현 방향이 잡힌 뒤 처음 그림 · 작업 · 검증 · 질문 · 설문 노드 · inbox · devview 첫 화면). 명령을 쓰기 전에 명령 절
+- **docs/flowtree.md** = 작업 그래프 규칙 — 진행 상태 · 할 일의 정본(2차판 시점 초안 → 논의 뒤 보강 · 작업 · 검증 · 질문 · 설문 노드 · inbox · devview 첫 화면). 명령을 쓰기 전에 명령 절
 - **docs/WORKLOG.md** = 작업 기록 · 흐름 기록 — 세션 시작 · 압축(/compact) 직후 먼저 읽는다. 맨 위 «🔄 인계» 칸 · 모양은 docs/examples/WORKLOG_example.md
 - **docs/CODE_RULE.md** = 코딩 문서 · 코딩 정책(코딩 · git) — 코드를 쓰거나 커밋하기 전에 읽는다
 - **docs/UI_RULE.md** = UI 문서 · 프론트 정책 · 프론트 문서 — 화면을 만들거나 고치기 전에 읽는다
@@ -17,8 +17,9 @@
 - **루트 README.md** = 과제 지시문(과제 저장소에 있을 때 · 수정 금지). 🔴 HOW_TO_RUN · AI_COLLABORATION 은 유저가 직접 쓴다 — 에이전트는 쓰지 않고 양식 파일이 있는지만 본다
 - **docs/DEPLOY_PLAN.md** = 배포 계획서 — 과제가 요구한 실행 · 배포 방식 · 확인 방법 · 결과. $ready-start 세션(기계 · README 낱말) → $main 1-1(초안) → $ready-end 1-1(준비 · 구동 · 확인 결과). 모양은 docs/examples/DEPLOY_PLAN_example.md
 - **docs/USER.md** = 유저 질문 · 할 일 칸(AGENTS 의 «📌» 로 등록) · **docs/surveys/<프로젝트>/** = 설문 기록(json · 화면은 devview 설문 탭) · **docs/examples/** = 문서 예시
-- **bookkit/**(README · RULES · cards) = 과제 파악 책 만드는 기준 · ⭐ 벤치마크 = bookkit/book_example(task09/task09_kit.html · 펼침 사진 task09/Image/spread_*.png)
+- **bookkit/**(README · RULES · cards) = 과제 파악 책 만드는 기준 · ⭐ 벤치마크 = bookkit/book_example(09(task09/task09_kit.html · 펼침 사진 task09/Image/spread_*.png) · 10(task10_guide_v3.html · 펼침 사진 Image/spread_*.png))
 - **skeleton/**(README · cards K0~K5) = 뼈대 · **lib/README.md** = 부품 창고 · **ref/**(CHECKSHEET 유저 점검표 · LIBS 판 번호) · **devview/README.md** = 화면 · **scripts/envcheck/README.md** = 환경 점검
+- **$precheck**(.agents/skills/precheck) = 사전 체험 왕복 점검 — 큐 · 허브 · 서브 8개 · 설문 · 스티커 · 그래프 마법봉 · 결과 키트 precheck.md(대회 본선 흐름에는 쓰지 않는다)
 - 예방: docs 문서는 자동으로 실리지 않는다 — 언제 읽을지 안 적으면 아무도 안 읽는다
 - hand_off.md = 무엇 · 왜 · 섹션 작업 순서 정본 / flowtree = 진행 상태 · 할 일 정본 / WORKLOG = 어떻게(흐름 · 파일 · 커밋 · 디버깅) · WORKLOG 에 옮긴 결정은 사본이라 고치지 않는다
 ## 2. 작업 기록(WORKLOG) 쓰는 법
@@ -27,7 +28,7 @@
 - 예방: 작업에 집중하다 기록을 잊어 «무엇을 왜 했나»를 재구성하지 못한다 · 확정한 값을 다시 추측한다
 
 ## 3. 결정 · 인수인계 문서(hand_off.md) 쓰는 법
-- hand_off = 유저와 대화로 쌓는 결정 기록 + 섹션 작업 순서 + 인수인계. 2단계에 쌓기 시작하고 구현 중에도 덧붙인다. docs/hand_off.md 하나. 섹션 = 기능 · 작업 하나(= flowtree 의 구현 순서 한 줄기). hand_off.md 에는 결정 · 이유 · 설계 상세 · 수정 범위 승인 · 검증 기록 · 섹션 작업 순서만 — 착수 · 검증 중 · 보류 같은 진행 상태와 할 일은 flowtree 에만(두 곳에 적으면 어긋난다 · 노드 단위 진행 · 완료 여부의 정본은 flowtree — 구현 방향이 잡힌 뒤 그림 · docs/flowtree.md 0절). 맨 위 «작업 개요» = MAIN 이 초안을 쓰고 유저와 대화로 확정(전체 결정 · 뼈대 파일 · 함수 표 · 섹션 목록) · «읽는 법» 은 사람이 읽는 범례만 둔다
+- hand_off = 유저와 대화로 쌓는 결정 기록 + 섹션 작업 순서 + 인수인계. 2단계에 쌓기 시작하고 구현 중에도 덧붙인다. docs/hand_off.md 하나. 섹션 = 기능 · 작업 하나(= flowtree 의 구현 순서 한 줄기). hand_off.md 에는 결정 · 이유 · 설계 상세 · 수정 범위 승인 · 검증 기록 · 섹션 작업 순서만 — 착수 · 검증 중 · 보류 같은 진행 상태와 할 일은 flowtree 에만(두 곳에 적으면 어긋난다 · 노드 단위 진행 · 완료 여부의 정본은 flowtree — 2차판 시점 초안 → 논의 뒤 보강 · docs/flowtree.md). 맨 위 «작업 개요» = MAIN 이 초안을 쓰고 유저와 대화로 확정(전체 결정 · 뼈대 파일 · 함수 표 · 섹션 목록) · «읽는 법» 은 사람이 읽는 범례만 둔다
 - 섹션 제목 줄 «## 번호 · 이름 — 저위험|민감»(저위험 = UI 객체 · 배치 · 스타일 / 민감 = 파이프라인 · 외부 API · DB 쓰기). 1-1 은 입력 → 처리 → 출력이 한 바퀴 도는 얇은 기능(세로 조각)
 - 블록 8개: ✅ 수정 범위 · ✅ 목표(개요) · ✅ 성공 기준 · ✅ 배경 · ✅ 논의 내용 · N회차(회차마다 블록 하나) · ✅ 결과 정리 · ✅ 검증 기록(접힘) · ✅ 코드 개선 제안(접힘)
 - **수정 범위**: 파일마다 한 줄 «파일 — 바꿀 함수 이름들» + «자세히»(표: 파일 · 클래스 · 함수 · 지금 하는 일 · 변경 전 · 변경 후) + «생성 예정 파일»(없으면 «없음»)

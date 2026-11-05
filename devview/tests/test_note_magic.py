@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 r"""책 스티커 마법봉 시험(헤드리스) — 스티커 접수 → 🪄 → 페이지 서버 POST …/api/notes/<id>/magic → 허브 요청 파일(2ND · note) + 가짜 codex queue
-→ magic.py answer-note → 새로고침 뒤 초록 답 칸 · 2ND 미등록이면 «2ND 미연결»
+→ magic.py answer-note --title → 새로고침 뒤 스티커는 빠지고 아래 질문 줄 행 · 2ND 미등록이면 «2ND 미연결»
 
     py -3 devview/tests/test_note_magic.py           → PASS / FAIL (playwright 없으면 SKIP)
 
@@ -134,8 +134,9 @@ def main():
             msg = q[-1][-1] if q else ""
             rid = msg.rsplit(" ", 1)[-1]
             check(q and q[-1][:3] == ["queue", "--thread", "019a-2nd"], "가짜 codex — 2ND thread 로 queue", q[-1:])
-            check(msg == f"--message=🪄 책 ‹{NAME}› 스티커 질문: 최적 기준을 왜 총거리로 잡나? (블록 s3-Q1)\n$2nd-magic {rid}",
-                  "queue 글 = 🪄 책 ‹…› 스티커 질문: 원문 (블록 …) + 끝 줄 $2nd-magic 요청id", msg)
+            check(msg == f"--message=🪄 책 ‹{NAME}› 스티커 질문: 최적 기준을 왜 총거리로 잡나? (블록 s3-Q1)\n"
+                         f"스티커 {nid} — 답에 짧은 제목(--title · 20자 안팎)도 달 것\n$2nd-magic {rid}",
+                  "queue 글 = 🪄 책 ‹…› 스티커 질문: 원문 (블록 …) + 스티커 id · 짧은 제목 지시 + 끝 줄 $2nd-magic 요청id", msg)
             req = json.loads((hub / "requests" / f"{rid}.json").read_text(encoding="utf-8"))
             t = req["target"]
             check(req["role"] == "2nd" and req["view"] == "book" and t["kind"] == "note" and t["note"] == nid and t["block"] == "s3-Q1"
@@ -150,16 +151,20 @@ def main():
             menv = dict(os.environ, CODEX_HUB_DIR=str(hub), CODEX_THREAD_ID="019a-2nd", PYTHONUTF8="1")
             r = subprocess.run([sys.executable, str(MAGIC), "show", rid], cwd=root, env=menv, capture_output=True, text=True, encoding="utf-8")
             check(r.returncode == 0 and "블록 s3-Q1" in r.stdout and f"answer-note {rid}" in r.stdout, "magic.py show — 책 · 블록 · 답 자리 note", r.stdout + r.stderr)
-            r = subprocess.run([sys.executable, str(MAGIC), "answer-note", rid, "README 가 기준을 말하지 않아 총거리를 기본 가정으로 둔다."],
-                               cwd=root, env=menv, capture_output=True, text=True, encoding="utf-8")
-            check(r.returncode == 0 and "답 달음" in r.stdout, "magic.py answer-note", r.stdout + r.stderr)
+            r = subprocess.run([sys.executable, str(MAGIC), "answer-note", rid, "README 가 기준을 말하지 않아 총거리를 기본 가정으로 둔다.",
+                                "--title", "최적 기준"], cwd=root, env=menv, capture_output=True, text=True, encoding="utf-8")
+            check(r.returncode == 0 and "답 달음" in r.stdout and json.loads(nf.read_text(encoding="utf-8"))[0].get("title") == "최적 기준",
+                  "magic.py answer-note --title — 답 · 제목", r.stdout + r.stderr)
             pg.reload()
             pg.wait_for_function("window.__book && window.__book.ready", timeout=60000)
             pi = pg.evaluate("+document.querySelector('#book [data-id=\"s3-Q1\"]').closest('.page').dataset.pi")
             pg.evaluate(f"window.__book.go({pi})")
             pg.wait_for_timeout(500)
-            na = pg.locator(".note .na")
-            check(na.count() == 1 and "기본 가정" in na.inner_text() and na.is_visible(), "새로고침 뒤 스티커 아래 초록 답 칸")
+            row = pg.locator("#spQa .qr")
+            check(pg.locator(".note").count() == 0 and row.count() == 1 and row.locator(".qrh").inner_text() == "Q1. 최적 기준",
+                  "새로고침 뒤 스티커는 빠지고 아래 질문 줄에 «Q1. 최적 기준»")
+            row.locator(".qrh").click()
+            check("기본 가정" in row.locator(".qrb").inner_text() and row.locator(".qrb").is_visible(), "행 펼침 — 답 글")
             pg.screenshot(path=str(SHOTS / "note_magic_answer.png"))
             # 2ND 미등록 → «2ND 미연결»
             reg.unlink()

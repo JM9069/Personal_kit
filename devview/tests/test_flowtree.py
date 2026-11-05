@@ -105,6 +105,9 @@ def make_project(base):
     (root / "docs" / "notes.md").write_text(NOTES, encoding="utf-8")
     (root / "data").mkdir()
     (root / "data" / "sample.csv").write_text("번호,이름\n1,가\n", encoding="utf-8")
+    (root / "data" / "extra.csv").write_text("번호\n1\n", encoding="utf-8")
+    (root / "data" / "_origin_md5.txt").write_text("지문\n", encoding="utf-8")
+    (root / "data" / ".hidden").write_text("숨김\n", encoding="utf-8")
     # 트리 — 코드 루트를 작업 폴더/app 으로 · 노드에 연결 문서
     nodes = [
         {"id": "root", "kind": "root", "title": "가상 앱", "summary": "시험용 그래프"},
@@ -228,7 +231,7 @@ def pick(page, nid):
     return fr
 
 
-# 화면 시험 — 첫 화면 · Alt+Q · ` 파일 열기 · 앵커 줄 · 닫기 · 모듈 설명
+# 화면 시험 — 첫 화면 · Alt+Q(MAIN 마법봉) · ` 파일 열기 · 앵커 줄 · 닫기 · 모듈 설명
 # base: 서버 주소 / adr_line · note_line: 기대 줄
 def test_ui(base, adr_line, note_line):
     with sync_playwright() as pw:
@@ -257,22 +260,42 @@ def test_ui(base, adr_line, note_line):
         check("노드 추가 단추 4개(work · insp · question · suggest)",
               [b.get_attribute("title") for b in fr.locator(".addbar button").all()] == ["work", "insp", "question", "suggest"])
 
-        # Alt+Q — 그래프 iframe 안에 포커스가 있을 때
+        # Alt+Q = 고른 노드로 MAIN 마법봉 — 나가는 요청만 잡는다(실제 codex 안 부름)
+        magic = []
+
+        # 마법봉 요청 받기
+        def on_magic(route):
+            magic.append(route.request.post_data_json)
+            route.fulfill(status=200, content_type="application/json", body='{"msg": "보냄"}')
+
+        page.route("**/api/hub/magic", on_magic)
+        # sync 판은 evaluate 때 경로 처리기가 돈다
+        sent = lambda n: wait_for(lambda: page.evaluate("1") and len(magic) == n, 3)  # noqa: E731
+        wait_for(lambda: page.locator("#hub .dv-hub-row").count() > 0, 5)
         fr.locator(".react-flow__pane").click(position={"x": 40, "y": 40})
         check("포커스가 그래프 iframe 안", page.evaluate("document.activeElement.tagName") == "IFRAME")
         page.keyboard.press("Alt+q")
-        check("iframe 안 Alt+Q → 코드", wait_for(lambda: cur_view(page) == "code", 3) and page.is_visible("#codeView"), cur_view(page))
+        check("고른 노드 없이 Alt+Q → 알림 · 요청 안 나감 · 보기 그대로", wait_for(lambda: "노드를 고르지 않음" in page.inner_text("#toasts"), 3)
+              and not magic and cur_view(page) == "graph", (magic, cur_view(page)))
+        fr = pick(page, "f-data")
+        wait_for(lambda: page.evaluate("window.devview.flowSelection().nodes.length") == 1, 3)
         page.keyboard.press("Alt+q")
-        check("devview 문서에서 Alt+Q → 그래프", wait_for(lambda: cur_view(page) == "graph", 3), cur_view(page))
+        check("iframe 안 Alt+Q → 고른 노드로 MAIN 마법봉 요청", sent(1) and magic[0]["nick"] == "main"
+              and [n["id"] for n in magic[0]["selection"]["nodes"]] == ["f-data"], magic)
+        check("iframe 안 Alt+Q → 보기 그대로", cur_view(page) == "graph", cur_view(page))
         # 편집기 안 포커스에서도
         page.evaluate("window.devview.showView('code')")
         page.evaluate("window.devview.openFile('app/src/main.py')")
         wait_for(lambda: page.evaluate("window.devview.activePath()") == "app/src/main.py", 5)
         page.evaluate("window.devview.editor().focus()")
+        main_py0 = page.evaluate("window.devview.editor().getValue()")
         page.keyboard.press("Alt+q")
-        check("편집기 안 Alt+Q → 그래프", wait_for(lambda: cur_view(page) == "graph", 3), cur_view(page))
-        main_py = page.evaluate("window.devview.editor().getValue()")
-        check("Alt+Q 가 편집기에 글자를 넣지 않음", "q" not in main_py[-3:] and "ㅂ" not in main_py, main_py[-20:])
+        check("편집기 안 Alt+Q → 고른 노드로 MAIN 마법봉 요청 · 보기 그대로", sent(2) and magic[1]["nick"] == "main"
+              and [n["id"] for n in magic[1]["selection"]["nodes"]] == ["f-data"] and cur_view(page) == "code", (magic[1:], cur_view(page)))
+        check("Alt+Q 가 편집기에 글자를 넣지 않음", page.evaluate("window.devview.editor().getValue()") == main_py0)
+        page.unroute("**/api/hub/magic")
+        page.evaluate("window.devview.showView('graph')")
+        wait_for(lambda: cur_view(page) == "graph", 3)
 
         # 파일 노드 → ` → 오른쪽 절반에 파일
         fr = pick(page, "f-data")
@@ -376,12 +399,13 @@ def test_ui(base, adr_line, note_line):
         br.close()
 
 
-# 그래프 파일 없는 작업 폴더 — 빈 그래프로 시작(개편 2026-11-03) · 첫 화면 그래프 · 아래 막대 한 줄 · 단추로 첫 노드 → 파일 생김 · Alt+Q 동작
+# 그래프 파일 없는 작업 폴더 — 빈 그래프로 시작(개편 2026-11-03) · 첫 화면 그래프 · 아래 막대 한 줄 · 단추로 첫 노드 → 파일 생김
 # base: 서버 주소 / root: 작업 폴더
 def test_missing(base, root):
     code, body = http(base + "/ft/api/data")
     d = json.loads(body)
-    check("tree.json 없음 → 빈 그래프 + meta.missing", code == 200 and d["tree"] == {} and d["meta"]["missing"] == str(root / "docs" / "flowtree" / "tree.json"),
+    check("tree.json 없음 → 처음 열 때 틀을 깔아 파일 생김(새 폴더에서도 섹션에 틀이 보임)",
+          code == 200 and len(d["tree"].get("nodes", [])) == 252 and d["meta"]["missing"] is None and (root / "docs" / "flowtree" / "tree.json").is_file(),
           (code, d.get("meta", {}).get("missing")))
     with sync_playwright() as pw:
         try:
@@ -395,8 +419,8 @@ def test_missing(base, root):
         page.goto(base + "/")
         page.wait_for_selector("html[data-ready='1']", timeout=30000)
         check("tree 없어도 첫 화면 = 그래프", cur_view(page) == "graph")
-        ok = wait_for(lambda: ft_frame(page).locator(".react-flow__pane").count() == 1 and "새 그래프" in ft_frame(page).locator("footer.bar").inner_text(), 15)
-        check("빈 그래프 화면 · 아래 막대 «새 그래프»", ok and ft_frame(page).locator(".react-flow__node").count() == 0 and ft_frame(page).locator(".fatal").count() == 0)
+        ok = wait_for(lambda: ft_frame(page).locator(".react-flow__pane").count() == 1, 15)
+        check("Main 은 빈 틀을 안 보여 줌", ok and ft_frame(page).locator(".react-flow__node").count() == 0 and ft_frame(page).locator(".fatal").count() == 0)
         # 작업 단추 → 빈 곳 클릭 → 제목 → Enter → tree.json 생김
         fl = ft_frame(page)
         fl.locator(".addbar button[data-add='work']").click()
@@ -406,17 +430,125 @@ def test_missing(base, root):
         page.keyboard.press("Enter")
         tp = root / "docs" / "flowtree" / "tree.json"
         ok = wait_for(lambda: fl.locator(".react-flow__node[data-id='t1']").count() == 1 and tp.is_file(), 8)
-        n1 = json.loads(tp.read_text(encoding="utf-8"))["nodes"][0] if tp.is_file() else {}
+        n1 = next((n for n in json.loads(tp.read_text(encoding="utf-8"))["nodes"] if n["id"] == "t1"), {}) if tp.is_file() else {}
         check("단추로 첫 노드 → tree.json 생김(작업 · hand_off · user)", ok and (n1.get("kind"), n1.get("graph"), n1.get("by")) == ("task", "hand_off", "user"), n1)
         page.screenshot(path=str(SHOTS / "ft_empty_first_node.png"))
         fl.locator(".react-flow__pane").click(position={"x": 30, "y": 30})
-        page.keyboard.press("Alt+q")
-        check("tree 없어도 Alt+Q → 코드", wait_for(lambda: cur_view(page) == "code", 3))
-        page.keyboard.press("Alt+q")
-        check("Alt+Q → 그래프", wait_for(lambda: cur_view(page) == "graph", 3))
         time.sleep(2.5)   # 화면이 2초마다 다시 묻는 동안에도
         check("빈 그래프 — 콘솔 오류 없음(404 안 쌓임)", not cons, cons[:3])
         br.close()
+
+
+# 섹션 칸 · 화면별 위치 시험 — 명령 · 저장(화면 동작은 test_flowtree_screens.py)
+# base: 서버 주소 / root: 작업 폴더
+def test_sections(base, root):
+    # tree.json · tree.user.json 경로
+    tp = root / "docs" / "flowtree" / "tree.json"
+    up = tp.with_name("tree.user.json")
+    # 명령 실행
+    # args: 명령 인자
+    def cli(*args):
+        return subprocess.run([sys.executable, str(FLOWTREE / "flowtree.py"), "--tree", str(tp), *args],
+                              capture_output=True, text=True, encoding="utf-8")
+    # 노드 하나
+    # nid: 노드 id
+    def node(nid):
+        return next(n for n in json.loads(tp.read_text(encoding="utf-8"))["nodes"] if n["id"] == nid)
+    # 지급 파일 노드 — 폴더 통째 · 다시 해도 안 늘고 · 점검 정상 · Main 화면 대상(screen 칸 없음)
+    r = cli("--role", "main", "--root", str(root), "file-add", "data")
+    files = [n for n in json.loads(tp.read_text(encoding="utf-8"))["nodes"] if n.get("kind") == "file" and n.get("by") == "main"]
+    check("file-add 폴더 → 파일 노드", r.returncode == 0 and any(n["path"] == "data/extra.csv" and "screen" not in n for n in files), (r.stdout, r.stderr, files))
+    check("file-add — 지문 목록 · 점 파일 제외", not [n for n in files if n["title"] in ("_origin_md5.txt", ".hidden")], files)
+    r = cli("--role", "main", "--root", str(root), "file-add", "data")
+    check("file-add 다시 → 새 0", "새 0" in r.stdout, r.stdout)
+    r = cli("--role", "main", "--root", str(root), "file-add", "없는폴더")
+    check("file-add 없는 경로 거부", r.returncode == 1, r.stderr)
+    r = cli("--role", "main", "--root", str(root), "check")
+    check("file-add 뒤 파일 노드 오류 없음", "missing-parent" not in r.stdout and "graph-file" not in r.stdout, r.stdout)
+    cli("--role", "main", "add", "-", "섹션 작업", "--summary", "요약", "--section", "2")
+    check("add --section → screen 칸", node("t1").get("screen") == 2, node("t1"))
+    cli("--role", "main", "add", "-", "칸 없는 작업")
+    check("add 섹션 없음 → 칸 없음", "screen" not in node("t2"), node("t2"))
+    check("옛 노드 — 칸 없음 그대로", "screen" not in node("r-check"), node("r-check"))
+    r = cli("--role", "main", "section-set", "t2", "3")
+    check("section-set → 섹션 바뀜", r.returncode == 0 and node("t2").get("screen") == 3 and "섹션3" in r.stdout, r.stdout)
+    r = cli("--role", "main", "section-set", "t2", "-")
+    check("section-set - → 칸 지움", r.returncode == 0 and "screen" not in node("t2"), r.stdout)
+    r = cli("--role", "main", "section-set", "t2", "9")
+    check("범위 밖 섹션 거부", r.returncode == 1 and "screen" not in node("t2"), r.stderr)
+    r = cli("--role", "2nd", "section-set", "t2", "1")
+    check("남의 역할 거부", r.returncode == 1 and "screen" not in node("t2"), r.stderr)
+    cli("--role", "main", "verify-add", "t1", "확인", "--section", "4")
+    check("verify-add --section", node("v1").get("screen") == 4, node("v1"))
+    cli("--role", "main", "survey-add", "-", "고르기", "--option", "가", "--option", "나", "--section", "5")
+    check("survey-add --section", node("s1").get("screen") == 5, node("s1"))
+    r = cli("--role", "main", "show", "t1")
+    check("show 에 섹션", "섹션: 2" in r.stdout, r.stdout[:120])
+    # 화면 명령 머리글
+    hdr = {"X-Devview": "1", "Content-Type": "application/json"}
+    code, b = http(base + "/ft/api/act", json.dumps({"op": "node-add", "args": {"kind": "task", "title": "단추 작업", "section": 6}}).encode(), hdr)
+    check("화면 node-add 섹션", code == 200 and node(json.loads(b)["id"]).get("screen") == 6, b[:120])
+    code, b = http(base + "/ft/api/act", json.dumps({"op": "ask", "args": {"text": "섹션 질문", "section": 6}}).encode(), hdr)
+    check("화면 ask 섹션", code == 200 and node(json.loads(b)["id"]).get("screen") == 6, b[:120])
+    check("meta.screens — 스위치 개수", json.loads(http(base + "/ft/api/data")[1])["meta"]["screens"] == 10)
+    # 화면별 위치 · 고른 화면
+    body = {"version": 1, "positions": {"feature": {"t1": [1, 2]}, "s2": {"t1": [30, 40]}}, "screen": 2}
+    code, _ = http(base + "/ft/api/user", json.dumps(body).encode(), hdr)
+    # 저장된 유저 칸
+    u = json.loads(up.read_text(encoding="utf-8"))
+    check("화면별 위치 · 고른 화면 저장", code == 200 and u["positions"]["feature"]["t1"] == [1, 2] and u["positions"]["s2"]["t1"] == [30, 40]
+          and u["screen"] == 2, u)
+    code, _ = http(base + "/ft/api/user", json.dumps({"screen": "가"}).encode(), hdr)
+    check("고른 화면 값 종류 거부", code == 400, code)
+
+    # ======= 틀 노드 =======
+    # 그래프 · 빈 틀
+    tree = lambda: json.loads(tp.read_text(encoding="utf-8"))  # noqa: E731
+    frames = [n for n in tree()["nodes"] if n.get("frame")]
+    check("틀 노드 총수 = 섹션 9 × 작업 4 × (1 + 설문 2 + 검증 4)", len(frames) == 252 and tree()["framed"] == list(range(9)), len(frames))
+    check("섹션 틀 구성 — 작업 4 · 설문 8 · 검증 16",
+          [sum(n["kind"] == k and n["screen"] == 3 for n in frames) for k in ("task", "survey", "verify")] == [4, 8, 16])
+    # 할 일 목록 · 점검
+    box = {r: cli("--role", r, "inbox").stdout for r in ("main", "insp", "user")}
+    check("빈 틀 — inbox 에 안 나옴", not any("s0-t" in x or "s3-t" in x for x in box.values()), box)
+    r = cli("check")
+    check("빈 틀 — check 경고 없음", "s0-t" not in r.stdout + r.stderr, r.stdout[:200])
+    r = cli("frames", "2")
+    check("frames — 그 섹션 빈 틀 id", len(r.stdout.split()) == 28 and "s2-t1-v4" in r.stdout, r.stdout[:80])
+    r = cli("--role", "main", "fill", "s2-t1", "--title", "채운 작업", "--summary", "기능 설명", "--func", "a.py | run | 실행 | ⭐")
+    check("fill 작업 → 일반 노드 · 함수 표", r.returncode == 0 and "frame" not in node("s2-t1") and node("s2-t1")["funcs"][0]["name"] == "run", r.stdout + r.stderr)
+    check("채운 작업은 inbox 에 나옴", "s2-t1" in cli("--role", "main", "inbox").stdout)
+    r = cli("--role", "main", "fill", "s2-t1-v1", "--title", "결과 확인", "--script", "tests/test_a.py")
+    check("fill 검증 → 스크립트 칸", r.returncode == 0 and node("s2-t1-v1")["script"] == "tests/test_a.py" and "frame" not in node("s2-t1-v1"), r.stderr)
+    r = cli("--role", "main", "fill", "s2-t1-s1", "--title", "어느 쪽?", "--option", "가", "--option", "나", "--recommend", "2")
+    check("fill 설문 → 선택지 · 추천", r.returncode == 0 and node("s2-t1-s1")["recommend"] == 1 and len(node("s2-t1-s1")["options"]) == 2, r.stderr)
+    r = cli("--role", "main", "fill", "s2-t2", "--script", "x.py", "--title", "가")
+    check("fill 칸 종류 거부", r.returncode == 1 and "frame" in node("s2-t2"), r.stderr)
+    r = cli("--role", "user", "vote", "s2-t1-s1", "--pick", "1")
+    b = cli("--role", "main", "inbox").stdout
+    check("설문 투표 → inbox «설문 결정됨»", "s2-t1-s1 [설문 결정됨]" in b, b[:300])
+    cli("--role", "main", "survey-ack", "s2-t1-s1")
+    check("survey-ack → inbox 에서 빠짐", "s2-t1-s1" not in cli("--role", "main", "inbox").stdout)
+    code, b = http(base + "/ft/api/act", json.dumps({"op": "vote", "args": {"survey": "s2-t1-s1", "pick": -1, "memo": "다른 안"}}).encode(), hdr)
+    b2 = cli("--role", "main", "inbox").stdout
+    check("기타 선택 → inbox 에 기타 · 메모", code == 200 and "기타" in b2 and "다른 안" in b2, b2[:300])
+    code, b = http(base + "/ft/api/act", json.dumps({"op": "edit", "args": {"node": "s4-t1", "title": "유저가 쓴 제목"}}).encode(), hdr)
+    check("유저 edit → 틀에서 일반 노드 · 원문 칸 그대로", code == 200 and "frame" not in node("s4-t1") and node("s4-t1")["title"] == "", b[:100])
+    code, b = http(base + "/ft/api/act", json.dumps({"op": "edit", "args": {"node": "s4-t1-v1", "script": "tests/x.py"}}).encode(), hdr)
+    check("유저 edit 스크립트 경로", code == 200 and node("s4-t1-v1")["edit"]["script"] == "tests/x.py", b[:100])
+    code, b = http(base + "/ft/api/act", json.dumps({"op": "mark", "args": {"verify": "s4-t1-v1", "result": "fail"}}).encode(), hdr)
+    check("유저 성공 · 실패 표시 → 결과 기록", code == 200 and node("s4-t1-v1")["runs"][-1]["result"] == "fail" and node("s4-t1-v1")["runs"][-1]["by"] == "user", b[:100])
+    code, b = http(base + "/ft/api/act", json.dumps({"op": "edit", "args": {"node": "s4-t1-s1", "title": "유저 질문"}}).encode(), hdr)
+    r = cli("check")
+    check("유저가 질문만 쓴 설문 — 오류 아님(경고)", code == 200 and "error" not in [p["level"] for p in json.loads(http(base + "/ft/api/data")[1])["check"] if p.get("target") == "s4-t1-s1"], r.stdout[:200])
+    # 지운 틀은 다시 안 깔림
+    code, b = http(base + "/ft/api/act", json.dumps({"op": "node-del", "args": {"node": "s5-t2"}}).encode(), hdr)
+    # 남은 id
+    ids = {n["id"] for n in tree()["nodes"]}
+    check("틀 작업 Delete — 아래 빈 틀도 같이", code == 200 and "s5-t2" not in ids and "s5-t2-v1" not in ids and "s5-t1" in ids, b[:120])
+    cli("--role", "main", "add", "-", "다른 쓰기")
+    http(base + "/ft/api/data")
+    check("지운 틀 다시 안 깔림", "s5-t2" not in {n["id"] for n in tree()["nodes"]})
 
 
 def main():
@@ -435,6 +567,10 @@ def main():
         proc2, base2 = start(empty)
         procs.append(proc2)
         test_missing(base2, empty.resolve())
+        root3, _, _ = make_project(tmp / "sec")
+        proc3, base3 = start(root3)
+        procs.append(proc3)
+        test_sections(base3, root3)
     finally:
         for p in procs:
             p.terminate()

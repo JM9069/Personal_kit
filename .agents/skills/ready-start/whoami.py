@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# 세션 이름 확인 — «나는 MAIN · INSP · 2ND 중 누구인가» 와 «이름 → UUID»
+# 세션 이름 확인 — «나는 MAIN · 2ND 중 누구인가» 와 «이름 → UUID»
 #   python3 ~/.codex/skills/ready-start/whoami.py mark            표식 한 줄 출력(1단계 — 이 출력이 내 세션 기록에 남는다)
 #   python3 ~/.codex/skills/ready-start/whoami.py find 표식        표식이 든 세션 기록 = 나 → UUID · 이름 · 기록 파일(2단계)
 #   python3 ~/.codex/skills/ready-start/whoami.py name MAIN        이름 → UUID · 기록 파일(같은 이름이 여럿이면 가장 최근 것)
@@ -7,11 +7,11 @@
 #   python3 ~/.codex/skills/ready-start/whoami.py check 표식 --name MAIN --effort medium [--model gpt-6.1-sol] [--reviewer auto_review]
 #                                                         표식으로 내 세션을 찾아 «실제 적용된» 이름 · 모델 · 생각 강도 · 승인 방식을 기대값과 비교
 #                                                         (세션 기록의 마지막 turn_context 를 읽음 · 하나라도 다르면 종료코드 1)
-#   python3 ~/.codex/skills/ready-start/whoami.py check-name INSP --effort high   다른 세션을 이름으로 찾아 같은 검사(MAIN 이 셋을 다 볼 때)
+#   python3 ~/.codex/skills/ready-start/whoami.py check-name 2ND --effort medium   다른 세션을 이름으로 찾아 같은 검사(MAIN 이 둘을 다 볼 때)
 #
 # 왜 두 단계인가
 #   - 세션 기록(~/.codex/sessions/…/rollout-시각-UUID.jsonl)에는 이름이 없고, 이름은 세션 목록 파일(~/.codex/session_index.jsonl)에만 있다
-#   - 세션은 자기 UUID 를 모른다 — 세 세션이 동시에 돌면 «목록 맨 끝 = 나» 는 틀릴 수 있다
+#   - 세션은 자기 UUID 를 모른다 — 두 세션이 동시에 돌면 «목록 맨 끝 = 나» 는 틀릴 수 있다
 #   - 그래서 1단계에서 아무도 모르는 표식을 출력 → Codex 가 그 출력을 내 세션 기록에 적는다 → 2단계에서 표식이 든 기록 파일을 찾으면 그게 나
 # 목록 파일 규칙: 이름을 바꾸면 같은 UUID 로 새 줄이 붙는다 → UUID 마다 updated_at 이 가장 최신인 줄의 이름이 지금 이름
 # 종료코드: 0 찾음 · 1 못 찾음(표식이 아직 기록에 안 적힘 · 이름 없음) · 2 폴더 · 인자 오류
@@ -188,9 +188,9 @@ def cmd_check(args) -> int:
     return 1 if bad else 0
 
 
-# 역할 → 그 세션을 띄울 때 넣는 시작 메시지(ReadyStart.md 명령의 '$insp' 등) — 이름(/rename)이 없을 때 이것으로 찾는다
+# 역할 → 그 세션을 띄울 때 넣는 시작 메시지(ReadyStart.md 명령의 '$2nd' 등) — 이름(/rename)이 없을 때 이것으로 찾는다
 #   $ready-start 세션은 준비 전용(2026-11-04 — MAIN 으로 재시작하지 않는다)이라 MAIN 이 아니다
-ROLE_PROMPTS = {"MAIN": ("$main",), "INSP": ("$insp",), "2ND": ("$2nd",)}
+ROLE_PROMPTS = {"MAIN": ("$main",), "2ND": ("$2nd",)}
 
 
 # 세션 기록의 첫 «유저가 보낸» 메시지 — 자동으로 들어가는 AGENTS 지시문(«# AGENTS.md …» · «<…>»)은 건너뛴다
@@ -271,7 +271,7 @@ def main() -> int:
     p.add_argument("--effort")
     p.add_argument("--reviewer", default="auto_review", help="Approve for me = auto_review · 유저 승인 = user")
     p.add_argument("--scan", type=int, default=50)
-    # 다른 세션을 이름으로 — MAIN 이 INSP · 2ND 설정을 검사할 때(그 세션이 한 번은 대화를 돌았어야 적용값이 있음)
+    # 다른 세션을 이름으로 — MAIN 이 2ND 설정을 검사할 때(그 세션이 한 번은 대화를 돌았어야 적용값이 있음)
     p = sub.add_parser("check-name")
     p.add_argument("by_name")
     p.add_argument("--model", default="gpt-6.1-sol")

@@ -8,7 +8,7 @@
   insp: 검증 중 · 보류 · 결과(runs) 덧붙이기
   user: 화면 — 질문 만들기 · 고치기 · 닫기 · 지우기(답 없을 때) · 질문 선 잇기 · 끊기
         · 설문 답(vote) · 작업 · 검증 고치기(edit) · 함수 표 칸(funcs) · 검증 항목 추가(check-add)
-  main 추가: 설문 만들기(survey-add) · 설문 반영 기록(survey-ack) · 분석 결과 불러오기(import-analysis)
+  main 추가: 설문 만들기(survey-add) · 설문 반영 기록(survey-ack) · 분석 결과 불러오기(import-analysis) · 지급 파일 노드(file-add)
         · 함수 표(add --func · funcs-set — 유저가 고친 칸은 못 덮음) · 이름 바뀜 반영 기록(funcs-ack) · 코드에서 설명 읽기(funcs-scan)
   user 추가: 화면 노드 추가 단추(node-add — 작업 · 검증 · 설문을 hand_off 그래프 맨 위에 · by user)
 유저 칸(edit · 함수 표의 유저 칸(funcs[].user) · votes)은 에이전트 명령이 쓰지 않고, 에이전트 칸(제목 · 사건 · 결과 · 답)은 유저 명령이 덮지 않는다
@@ -37,6 +37,14 @@ SUMMARY_MAX = 60
 LATE_SEC = 300
 # 잠금 기다리는 최대 초
 LOCK_WAIT_SEC = 15
+# 화면 스위치 총 개수(Main + 섹션0 · 섹션1 …) — 이 값 하나로 화면(meta.screens)과 --section 범위가 같이 바뀜
+SCREENS = 10
+# 섹션 틀 — 작업 노드 수(세로로 이음) · 작업마다 왼쪽 설문 수 · 오른쪽 검증 수(두 줄) — 아직 안 깐 섹션에만 적용
+FRAME_TASKS = 4
+FRAME_SURVEYS = 2
+FRAME_VERIFIES = 4
+# 틀 처음 위치 간격 — 작업 세로 · 설문 x · 검증 x · 설문 · 검증 세로 줄 간격
+FRAME_DY, FRAME_SX, FRAME_VX, FRAME_VH = 640, 360, 340, 144
 # 역할 이름 목록
 ROLES = ("main", "2nd", "insp", "user")
 # 일 노드 종류 → 이름
@@ -49,15 +57,15 @@ OP_ROLES = {
     "answer-start": "2nd", "answer": "2nd",
     "verify-start": "insp", "verify-hold": "insp", "run": "insp",
     "ask": "user", "ask-edit": "user", "ask-close": "user", "ask-del": "user", "link": "user", "unlink": "user",
-    "survey-add": "main", "survey-ack": "main", "import-analysis": "main",
-    "funcs-set": "main", "funcs-ack": "main", "funcs-scan": "main",
-    "node-add": "user", "node-del": "user",
+    "survey-add": "main", "survey-ack": "main", "import-analysis": "main", "file-add": "main",
+    "funcs-set": "main", "funcs-ack": "main", "funcs-scan": "main", "section-set": "main", "fill": "main",
+    "node-add": "user", "node-del": "user", "mark": "user",
     "vote": "user", "edit": "user", "funcs": "user", "check-add": "user",
 }
-# 유저가 고칠 수 있는 노드 종류(edit) — 작업 · 검증
-EDITABLE_KINDS = ("task", "verify")
+# 유저가 고칠 수 있는 노드 종류(edit) — 작업 · 검증 · 설문(질문 칸)
+EDITABLE_KINDS = ("task", "verify", "survey")
 # edit 로 고치는 칸
-EDIT_FIELDS = ("title", "summary", "text")
+EDIT_FIELDS = ("title", "summary", "text", "script")
 # 분류 다섯(bookkit 계약 CATS 와 같은 순서)
 CATS = ("화면", "시스템", "알고리즘", "파이프라인", "문서")
 # 불러온 노드 제목 최대 글자(넘으면 줄이고 전문은 설명에)
@@ -181,6 +189,64 @@ def locked(tree_path):
         f.close()
 
 
+# 틀 깔기 — 아직 안 깐 섹션에만 한 번(tree.framed 기록 · 유저가 옮기거나 지운 노드는 다시 안 깖)
+#   빈 틀 노드 = frame 칸 true · pos0 = 섹션 화면 처음 위치 · 선은 tree.edges(sh · th = 손잡이)
+# tree: 그래프 / rev: 판 번호
+def lay_frames(tree, rev):
+    # 깐 섹션 · 시각
+    done = set(tree.get("framed") or [])
+    at, _ = now_stamp()
+    for s in range(SCREENS - 1):
+        if s in done:
+            continue
+        # 앞 작업 id
+        prev = None
+        for k in range(FRAME_TASKS):
+            # 작업 id · 세로 위치
+            tid, y = f"s{s}-t{k + 1}", k * FRAME_DY
+            # 틀 노드 공통 칸
+            base = {"graph": HAND_OFF, "title": "", "screen": s, "frame": True, "seq": rev, "at": at, "by": "main"}
+            tree["nodes"].append({"id": tid, "kind": "task", **base, "pos0": [0, y], "events": []})
+            if prev:
+                tree["edges"].append({"id": f"fe-{tid}", "source": prev, "target": tid, "kind": "flow"})
+            prev = tid
+            # 설문 — 왼쪽 세로 줄 · 하나하나 작업에 직접(병렬)
+            for i in range(FRAME_SURVEYS):
+                # 설문 id
+                sid = f"{tid}-s{i + 1}"
+                tree["nodes"].append({"id": sid, "kind": "survey", **base, "parent": tid,
+                                      "pos0": [-FRAME_SX, y + int((i - (FRAME_SURVEYS - 1) / 2) * FRAME_VH)],
+                                      "options": [], "votes": [], "acks": []})
+                tree["edges"].append({"id": f"fe-{sid}", "source": sid, "target": tid, "kind": "flow", "sh": "r", "th": "l"})
+            # 검증 — 오른쪽 세로 줄 · 하나하나 작업에서 직접(병렬)
+            for j in range(FRAME_VERIFIES):
+                # 검증 id
+                vid = f"{tid}-v{j + 1}"
+                tree["nodes"].append({"id": vid, "kind": "verify", **base, "parent": tid, "events": [], "runs": [],
+                                      "pos0": [FRAME_VX, y + int((j - (FRAME_VERIFIES - 1) / 2) * FRAME_VH)]})
+                tree["edges"].append({"id": f"fe-{vid}", "source": tid, "target": vid, "kind": "flow", "sh": "r", "th": "l"})
+        done.add(s)
+    tree["framed"] = sorted(done)
+
+
+# 내용이 들어온 틀 노드 → 일반 노드(frame 칸을 뗌)
+# tree: 그래프
+def unframe(tree):
+    for n in tree["nodes"]:
+        if isinstance(n, dict) and n.get("frame") and any(n.get(k) for k in (
+                "title", "summary", "text", "script", "edit", "funcs", "options", "doc", "events", "runs", "votes")):
+            del n["frame"]
+
+
+# 그래프 파일이 없거나 틀이 덜 깔렸으면 깖(새 작업 폴더에서 화면을 처음 열어도 틀이 보이게)
+# tree_path: tree.json 경로
+def ensure_frames(tree_path):
+    # 지금 그래프
+    tree = read_json(tree_path, None)
+    if not Path(tree_path).exists() or (isinstance(tree, dict) and not set(range(SCREENS - 1)) <= set(tree.get("framed") or [])):
+        mutate(tree_path, lambda t, rev: None)
+
+
 # 잠금 → 다시 읽기 → fn(그래프, 새 판 번호) → 교체 → 판 번호 +1. fn 의 반환값을 돌려줌
 # tree_path: tree.json 경로 / fn: 고치는 함수
 def mutate(tree_path, fn):
@@ -197,8 +263,10 @@ def mutate(tree_path, fn):
         tree.setdefault("edges", [])
         # 새 판 번호
         rev = int(tree.get("rev") or 0) + 1
+        lay_frames(tree, rev)
         # 고친 결과
         res = fn(tree, rev)
+        unframe(tree)
         tree["rev"] = rev
         write_json(path, tree)
         return res
@@ -282,6 +350,21 @@ def parse_doc(s):
     return {"path": path.strip(), "anchor": anchor.strip()} if anchor.strip() else {"path": path.strip()}
 
 
+# 섹션 값 다듬기 → 번호 · 없음 · «-» 은 None(칸 없음). 칸 이름은 screen(section 은 묶음 노드가 이미 씀)
+# v: 섹션 값
+def norm_section(v):
+    if v in (None, "", "-"):
+        return None
+    try:
+        # 번호
+        s = int(v)
+    except (TypeError, ValueError):
+        s = -1
+    if not 0 <= s <= SCREENS - 2:
+        raise StoreError(f"섹션 «{v}» — 0 ~ {SCREENS - 2}")
+    return s
+
+
 # 그래프 이름 다듬기 — 옛 이름(adr)은 지금 이름(hand_off)으로 · 그 밖은 그대로
 # g: 그래프 이름
 def norm_graph(g):
@@ -330,8 +413,10 @@ def names_by_user(n):
 # MAIN — 작업 노드 만들기
 # parent: 부모 id(«-» 면 맨 위) / title: 제목 / summary: 요약 / text: 설명 / doc: «경로#앵커»
 # graph: task · hand_off(옛 adr 도 받음 · 없으면 부모 그래프 · 맨 위면 hand_off) / names: 옛 이름 칸 «파일.py · 함수» → 함수 표 행 / funcs: 함수 표 행(«파일 | 함수 | 설명 | ⭐»)
-def op_add(tree, rev, role, parent, title, summary="", text="", doc=None, graph=None, names=None, funcs=None):
+# section: 섹션 번호(없으면 칸 없음)
+def op_add(tree, rev, role, parent, title, summary="", text="", doc=None, graph=None, names=None, funcs=None, section=None):
     title = need_text(title, "제목")
+    section = norm_section(section)
     graph = norm_graph(graph)
     # 요약
     summary = str(summary or "").strip()
@@ -357,6 +442,8 @@ def op_add(tree, rev, role, parent, title, summary="", text="", doc=None, graph=
         node["text"] = str(text)
     if doc:
         node["doc"] = parse_doc(doc)
+    if section is not None:
+        node["screen"] = section
     # 함수 표 처음 값 — 옛 이름 칸(--names) 행 + 행(--func)
     first = names_to_rows(names) + [parse_func_row(x) for x in funcs or []]
     if first:
@@ -380,7 +467,8 @@ def op_event(tree, rev, role, t, task, note=""):
 
 # MAIN — 검증 노드 만들기(대상 노드 밑)
 # target: 대상 id / what: 확인할 것
-def op_verify_add(tree, rev, role, target, what):
+def op_verify_add(tree, rev, role, target, what, section=None):
+    section = norm_section(section)
     # 대상 노드
     tn = need_node(tree, target)
     if tn.get("kind") in ("question", "verify"):
@@ -392,7 +480,8 @@ def op_verify_add(tree, rev, role, target, what):
     nid = next_id(tree, "v")
     at, _ = now_stamp()
     tree["nodes"].append({"id": nid, "kind": "verify", "graph": g if g in GRAPHS else HAND_OFF, "parent": target, "title": what,
-                          "seq": rev, "at": at, "by": role, "events": [], "runs": []})
+                          "seq": rev, "at": at, "by": role, "events": [], "runs": [],
+                          **({} if section is None else {"screen": section})})
     return {"id": nid, "msg": f"{nid} 추가"}
 
 
@@ -456,9 +545,10 @@ def _link(tree, q, target):
 
 # USER — 질문 만들기(대상이 있으면 선도)
 # text: 질문 / target: 대상 id(없으면 섬) / view: 놓인 화면(feature · hand_off · code — 옛 adr 도 받음)
-# targets: 더 이을 대상 id 목록(devview 허브 2ND 마법봉 — 여럿 고른 노드를 한 번의 쓰기로)
-def op_ask(tree, rev, role, text, target=None, view="feature", targets=None):
+# targets: 더 이을 대상 id 목록(devview 허브 2ND 마법봉 — 여럿 고른 노드를 한 번의 쓰기로) / section: 섹션 번호(없으면 칸 없음)
+def op_ask(tree, rev, role, text, target=None, view="feature", targets=None, section=None):
     text = need_text(text, "질문")
+    section = norm_section(section)
     # 새 id
     nid = next_id(tree, "q")
     at, _ = now_stamp()
@@ -467,6 +557,8 @@ def op_ask(tree, rev, role, text, target=None, view="feature", targets=None):
             "events": [], "answers": []}
     if view and view != "feature":
         node["view"] = view
+    if section is not None:
+        node["screen"] = section
     tree["nodes"].append(node)
     if target:
         _link(tree, nid, target)
@@ -576,8 +668,9 @@ def fill_survey(node, question, options, recommend=None, why="", detail=""):
 
 # MAIN — 설문 노드 만들기(대상 밑 · «-» 면 그 그래프 맨 위)
 # target: 대상 id / question: 질문 / options: 선택지 / recommend: 추천(0부터) / why: 추천 이유 / detail: 배경 · 메커니즘 / graph: task · hand_off(옛 adr 도 받음)
-def op_survey_add(tree, rev, role, target, question, options, recommend=None, why="", detail="", graph=None):
+def op_survey_add(tree, rev, role, target, question, options, recommend=None, why="", detail="", graph=None, section=None):
     graph = norm_graph(graph)
+    section = norm_section(section)
     if graph not in (None, "") and graph not in GRAPHS:
         raise StoreError(f"그래프 «{graph}» — task · hand_off")
     # 대상 그래프
@@ -596,6 +689,8 @@ def op_survey_add(tree, rev, role, target, question, options, recommend=None, wh
     node = {"id": nid, "kind": "survey", "graph": graph or (pg if pg in GRAPHS else "task")}
     if target not in (None, "", "-"):
         node["parent"] = target
+    if section is not None:
+        node["screen"] = section
     fill_survey(node, question, options, recommend, why, detail)
     node.update({"seq": rev, "at": at, "by": role, "votes": [], "acks": []})
     tree["nodes"].append(node)
@@ -620,8 +715,12 @@ def survey_pending(n):
     return v["seq"] > max((a.get("seq", 0) for a in n.get("acks") or []), default=0)
 
 
+# 설문 «기타» 선택 번호(내용은 메모 칸)
+PICK_OTHER = -1
+
+
 # USER — 설문 답(선택 · 메모 · 보류). 안 준 칸은 지난 값 그대로 · 선택하면 보류 풀림
-# survey: 설문 id / pick: 선택 번호(0부터 · None = 해제) / memo: 메모 / hold: 보류
+# survey: 설문 id / pick: 선택 번호(0부터 · -1 = 기타 · None = 해제) / memo: 메모 / hold: 보류
 def op_vote(tree, rev, role, survey, pick=KEEP, memo=KEEP, hold=KEEP):
     # 설문 노드 · 지금 답
     n = need_node(tree, survey, "survey")
@@ -629,7 +728,7 @@ def op_vote(tree, rev, role, survey, pick=KEEP, memo=KEEP, hold=KEEP):
     if pick is not KEEP:
         if pick is not None:
             pick = int(pick)
-            if not 0 <= pick < len(n.get("options") or []):
+            if pick != PICK_OTHER and not 0 <= pick < len(n.get("options") or []):
                 raise StoreError(f"선택 번호 {pick + 1} — 선택지 1~{len(n.get('options') or [])}")
         cur["pick"] = pick
         if hold is KEEP and pick is not None:
@@ -643,7 +742,7 @@ def op_vote(tree, rev, role, survey, pick=KEEP, memo=KEEP, hold=KEEP):
     rec.update({"pick": cur["pick"], "memo": cur["memo"], "hold": cur["hold"]})
     n.setdefault("votes", []).append(rec)
     # 결과 글자
-    what = "보류" if cur["hold"] else (f"선택 {cur['pick'] + 1}" if cur["pick"] is not None else "미응답")
+    what = "보류" if cur["hold"] else "기타" if cur["pick"] == PICK_OTHER else (f"선택 {cur['pick'] + 1}" if cur["pick"] is not None else "미응답")
     return {"id": survey, "msg": f"{survey} {what}"}
 
 
@@ -669,15 +768,15 @@ def add_edit(n, rev, role, field, old, new):
 
 # USER — 작업 · 검증 · 섹션 후보의 제목 · 요약 · 설명 고치기(edit 칸 · 원래 글은 그대로). 빈 글자 = 고침 지움(원래 글로)
 # node: 노드 id / title · summary · text: 새 값(안 주면 그대로)
-def op_edit(tree, rev, role, node, title=KEEP, summary=KEEP, text=KEEP):
+def op_edit(tree, rev, role, node, title=KEEP, summary=KEEP, text=KEEP, script=KEEP):
     # 노드
     n = need_node(tree, node)
     if n.get("kind") not in EDITABLE_KINDS:
-        raise StoreError(f"«{node}» ({n.get('kind')}) 는 고칠 수 없음 — 작업 · 검증만")
+        raise StoreError(f"«{node}» ({n.get('kind')}) 는 고칠 수 없음 — 작업 · 검증 · 설문만")
     # 유저 고침 칸 · 바꾼 칸 수
     ed = dict(n.get("edit") or {})
     changed = 0
-    for key, val in (("title", title), ("summary", summary), ("text", text)):
+    for key, val in (("title", title), ("summary", summary), ("text", text), ("script", script)):
         if val is KEEP:
             continue
         val = str(val or "").strip()
@@ -1050,11 +1149,12 @@ def op_funcs(tree, rev, role, task, row="", cells=None, delete=False):
 
 # USER — 화면 노드 추가 단추(작업 · 검증 · 설문) — hand_off 그래프 맨 위에 새 노드 · 만든 사람 user
 #   작업은 MAIN 이 start · done 으로 진행 · 검증은 INSP 가 결과 · 설문은 유저가 고를 선택지가 아직 없음(MAIN 이 반영)
-# kind: task · verify · survey / title: 제목 / summary: 요약(60자 이내)
-def op_node_add(tree, rev, role, kind, title, summary=""):
+# kind: task · verify · survey / title: 제목 / summary: 요약(60자 이내) / section: 만든 화면의 섹션 번호(Main 이면 없음)
+def op_node_add(tree, rev, role, kind, title, summary="", section=None):
     if kind not in USER_ADD_KINDS:
         raise StoreError(f"종류 «{kind}» — {' · '.join(USER_ADD_KINDS)}")
     title = need_text(title, "제목")
+    section = norm_section(section)
     # 요약
     summary = str(summary or "").strip()
     check_short(summary, "요약")
@@ -1064,6 +1164,8 @@ def op_node_add(tree, rev, role, kind, title, summary=""):
     node = {"id": nid, "kind": kind, "graph": HAND_OFF, "title": title}
     if summary:
         node["summary"] = summary
+    if section is not None:
+        node["screen"] = section
     node.update({"seq": rev, "at": at, "by": role})
     # 종류별 기록 칸(덧붙이기만 하는 칸 — 처음은 빈 목록)
     if kind == "task":
@@ -1074,6 +1176,54 @@ def op_node_add(tree, rev, role, kind, title, summary=""):
         node.update({"options": [], "votes": [], "acks": []})
     tree["nodes"].append(node)
     return {"id": nid, "msg": f"{nid} 추가"}
+
+
+# MAIN — 틀 노드 채우기(준 칸만 · 에이전트 칸 — 유저 칸은 안 덮음). 채워지면 일반 노드
+# node: 작업 · 검증 · 설문 id / title: 제목(설문은 질문) / summary: 요약 / text: 설명 / doc: «경로#앵커» / funcs: 함수 표 행 / script: 검증 스크립트 경로
+# options · recommend · why · detail: 설문 선택지 · 추천(0부터) · 추천 이유 · 배경
+def op_fill(tree, rev, role, node, title=None, summary=None, text=None, doc=None, funcs=None, script=None,
+            options=None, recommend=None, why="", detail=""):
+    # 노드 · 종류
+    n = need_node(tree, node)
+    kind = n.get("kind")
+    if kind not in EDITABLE_KINDS:
+        raise StoreError(f"«{node}» ({kind}) 는 채울 수 없음 — 작업 · 검증 · 설문만")
+    if options and kind != "survey":
+        raise StoreError(f"«{node}» 는 {WORK_KINDS[kind]} — --option 은 설문만")
+    if script and kind != "verify":
+        raise StoreError(f"«{node}» 는 {WORK_KINDS[kind]} — --script 는 검증만")
+    if funcs and kind != "task":
+        raise StoreError(f"«{node}» 는 {WORK_KINDS[kind]} — --func 는 작업만")
+    if not (title or n.get("title") or (n.get("edit") or {}).get("title")):
+        raise StoreError(f"«{node}» 제목 없음 — --title")
+    if summary is not None:
+        check_short(str(summary).strip(), "요약")
+    if options:
+        fill_survey(n, title or n.get("title"), options, recommend, why, detail)
+    elif title:
+        n["title"] = need_text(title, "제목")
+    for key, val in (("summary", summary), ("text", text), ("script", script)):
+        if val is not None:
+            n[key] = str(val).strip()
+    if doc:
+        n["doc"] = parse_doc(doc)
+    if funcs:
+        op_funcs_set(tree, rev, role, node, funcs)
+    n["by"] = role
+    return {"id": node, "msg": f"{node} 채움"}
+
+
+# MAIN — 노드의 섹션 바꾸기 — «-» 면 칸을 지움(Main 만) · 칸 없는 아래 노드 · 이어진 질문은 화면에서 이 값을 따름
+# node: 노드 id / section: 섹션 번호 · «-»
+def op_section_set(tree, rev, role, node, section):
+    # 노드 · 섹션
+    n = need_node(tree, node)
+    s = norm_section(section)
+    if s is None:
+        n.pop("screen", None)
+    else:
+        n["screen"] = s
+    return {"id": node, "msg": f"{node} → {'Main' if s is None else f'섹션{s}'}"}
 
 
 # USER — 노드 지우기(그래프 화면 Delete 키 · 메뉴) — 질문은 ask-del · 맨 위 · 공용(모듈)은 거부
@@ -1087,12 +1237,15 @@ def op_node_del(tree, rev, role, node):
         raise StoreError(f"«{node}» 는 질문 — 질문 지우기(ask-del)로")
     if kind == "root" or kind in SHARED_KINDS:
         raise StoreError(f"«{node}» 는 {kind} — 못 지움")
-    # 아래 노드
-    kids = [x.get("id") for x in tree["nodes"] if isinstance(x, dict) and x.get("parent") == node]
+    # 아래 노드 — 빈 틀 노드는 같이 지움
+    under = [x for x in tree["nodes"] if isinstance(x, dict) and x.get("parent") == node]
+    kids = [x.get("id") for x in under if not x.get("frame")]
     if kids:
         raise StoreError(f"«{node}» 아래 노드 {len(kids)}개({' · '.join(map(str, kids[:3]))}) — 아래부터 지우기")
-    tree["nodes"] = [x for x in tree["nodes"] if x is not n]
-    tree["edges"] = [e for e in tree["edges"] if e.get("source") != node and e.get("target") != node]
+    # 지울 id
+    gone = {node, *(x.get("id") for x in under)}
+    tree["nodes"] = [x for x in tree["nodes"] if x.get("id") not in gone]
+    tree["edges"] = [e for e in tree["edges"] if e.get("source") not in gone and e.get("target") not in gone]
     return {"id": node, "msg": f"{node} 지움"}
 
 
@@ -1306,6 +1459,32 @@ def op_import_analysis(tree, rev, role, reqs=None, facts=None):
     return {"id": "", "msg": f"불러옴: 새 {stats['new']} · 갱신 {stats['upd']}"}
 
 
+# MAIN — 지급 파일 노드 만들기(Main 화면 · 과제 파악을 시작할 때). import-analysis 와 같은 맨 위 · 묶음을 쓰고, 뒤에 불러와도 경로 끝이 같으면 이 노드에 잇는다
+# files: 프로젝트 루트 기준 파일 경로 목록
+def op_file_add(tree, rev, role, files=None):
+    if not files:
+        raise StoreError("파일 없음")
+    # 셈 · 맨 위
+    stats = {"new": 0, "upd": 0}
+    root = next((n for n in tree["nodes"] if n.get("kind") == "root"), None)
+    if root is None:
+        root = upsert(tree, rev, role, "import:root", "i", {"kind": "root", "graph": "task", "title": "과제 파악"}, stats)
+    # 묶음 · 이미 있는 경로
+    group = upsert(tree, rev, role, "import:g:files", "i", {"kind": "group", "graph": "task", "parent": root["id"],
+                                                            "title": "파일 · 함정", "section": "files"}, stats)
+    have = {n.get("path") for n in tree["nodes"] if n.get("kind") == "file"}
+    # 새로 만든 수
+    made = 0
+    for p in files:
+        if p in have:
+            continue
+        at, _ = now_stamp()
+        tree["nodes"].append({"id": next_id(tree, "i"), "kind": "file", "graph": "task", "parent": group["id"],
+                              "title": p.rsplit("/", 1)[-1], "path": p, "seq": rev, "at": at, "by": role})
+        made += 1
+    return {"id": "", "msg": f"파일 노드: 새 {made} · 이미 있음 {len(files) - made}"}
+
+
 # 명령 → 본체
 OPS = {
     "add": op_add,
@@ -1319,12 +1498,15 @@ OPS = {
     "verify-start": lambda tree, rev, role, verify: op_verify_event(tree, rev, role, "start", verify),
     "verify-hold": lambda tree, rev, role, verify, note="": op_verify_event(tree, rev, role, "hold", verify, note),
     "run": op_run,
+    "mark": lambda tree, rev, role, verify, result: op_run(tree, rev, role, verify, result, "유저 표시"),
     "ask": op_ask, "ask-edit": op_ask_edit, "ask-close": op_ask_close, "ask-del": op_ask_del,
     "link": op_link, "unlink": op_unlink,
     "survey-add": op_survey_add, "survey-ack": op_survey_ack,
     "import-analysis": op_import_analysis,
+    "file-add": op_file_add,
     "vote": op_vote, "edit": op_edit, "funcs": op_funcs, "check-add": op_verify_add,
     "funcs-set": op_funcs_set, "funcs-ack": op_funcs_ack, "funcs-scan": op_funcs_scan, "node-add": op_node_add, "node-del": op_node_del,
+    "section-set": op_section_set, "fill": op_fill,
 }
 
 

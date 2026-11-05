@@ -9,10 +9,10 @@ description: 과제를 받은 직후 한 번 쓰는 «과제 파악» 스킬 —
 - 책 = 유저용(bookkit/books/<이름> · 유저 자료의 주) / 지도 = 에이전트용 정본(docs/ONTOLOGY.md — 데이터 사전 · 업무 규칙 번호 · 담당자 답으로 확정된 값 · 만들 것 판정)
 - 🔴 같은 분석 서브가 책 계약을 쓴 맥락 그대로 지도 칸을 **이어서** 채운다 — 다시 조사하지 않는다
 - 이 스킬은 순서와 «누가 무엇을 이어서» 만 — 칸 쓰는 법은 카드(bookkit/cards/ A1 · A2 · A3 «이어서 채울 온톨로지 칸» · W1 ~ W6 · M) · 양식(docs/ONTOLOGY.md 읽는 법 · bookkit/README.md)
-- 지도 채운 예시: docs/examples/ONTOLOGY_ref_1.md(데이터 과제) · ONTOLOGY_ref_2.md(데이터 없는 서비스 과제) · 책 예: bookkit/book_example/task09/ · 칸 예시 bookkit/contracts/example/
+- 지도 채운 예시: docs/examples/ONTOLOGY_ref_1.md(데이터 과제) · ONTOLOGY_ref_2.md(데이터 없는 서비스 과제) · 책 예: bookkit/book_example/(task09/ · task10_guide_v3.html · 칸 예시 template_examples.md) · bookkit/contracts/example/
 - 경로는 키트 폴더(AGENTS.md 가 있는 곳) 기준 · 명령의 python3 은 윈도우에서 py -3
 - 목표: 1차판 + 지도 위 네 상자 = 과제를 받고 10분 안쪽 · 완벽보다 «확인할 것」을 빨리 꺼내는 게 먼저다
-- ⭐ 책 품질 기준 = bookkit/book_example 의 task09/task09_kit.html 과 펼침 사진(task09/Image/spread_*.png) — 같은 수준으로 만든다
+- ⭐ 책 품질 기준 = bookkit/book_example 의 09(task09/task09_kit.html · 펼침 사진 task09/Image/spread_*.png) · 10(task10_guide_v3.html · 펼침 사진 Image/spread_*.png) — 같은 수준으로 만든다
 
 ## 0. 독자 수준 — 책 · 지도를 이 수준으로 쓴다(유저 11/02 · 친구 리포는 이 블록만 교체)
 - 개발 초보 — 컨테이너 · 도커 · 동시성 · 트랜잭션은 «처음 듣는 말» · 용어는 처음 나올 때 한 줄 풀이 · 입문 밖은 각주
@@ -25,28 +25,35 @@ description: 과제를 받은 직후 한 번 쓰는 «과제 파악» 스킬 —
 
 **1-0. 언제 · 순서**
 - 과제를 받은 직후 MAIN 이(main 1-1 의 1) · 또는 유저가 «$ontology · 책으로 · 과제 파악 책» 이라고 할 때(«$main 문제파악» 은 ⓪ 부터). 인자로 책 이름(«$ontology 11_fab_alarm») — 없으면 «과제 번호_짧은 영문» 으로 정하고 첫 줄에 알린다
-- 카드는 MAIN 의 서브들에게만(INSP · 2ND 아님) · 나눠 주는 말 · 시간표 · «한 번에»(아홉 카드 동시) 는 bookkit/cards/README.md
+- 카드는 MAIN 의 서브들에게만(2ND 아님) · 나눠 주는 말 · 시간표 · «한 번에»(아홉 카드 동시) 는 bookkit/cards/README.md
 - ⓪ 원본 보존: 지급 자료는 처음에 task_copy/(키트 루트)로 복사 — ls <루트> 의 과제 파일 · 폴더(키트 · .git · 점 폴더 제외)를 이름으로 하나씩 cp -a <루트>/이름 task_copy/(cp -a <루트>/. 통째 금지 — 키트가 자기 안으로 복사된다) · 복사 직후 md5sum 목록을 task_copy/_origin_md5.txt 로 · 이후 책 · 지도 · hand_off 의 링크 · 편집은 복사본만(원본은 읽기만) · 도구는 --task <키트>/task_copy
 
 | 차례 | 누가 | 책 | 이어서 — 지도(docs/ONTOLOGY.md) |
 |---|---|---|---|
-| ⓪ | 지휘(MAIN) | task_copy/ 복사 → A0 서브(새 맥락 · README 를 읽지 않는다 · cards/A0.md) → <책 폴더>/work/files_scan.json · inventory.md · 메인은 README 를 읽고 A0 결과에서 «README 요구는 있는데 파일에서 확인 안 된 정보» 를 다시 확인 → 확인할 것 후보로 ② 에 넘긴다 | |
-| ① | 지휘(MAIN) | python3 bookkit/new_book.py <이름> [--task <키트>/task_copy] → A2 서브 | |
+| ⓪ | 지휘(MAIN) | task_copy/ 복사 → **가장 먼저 그래프 Main 에 파일 노드**: python3 devview/flowtree/flowtree.py --role main file-add task_copy(안의 파일 전부 · 유저가 ` 키로 바로 연다) → A0 서브(새 맥락 · README 를 읽지 않는다 · cards/A0.md) → <책 폴더>/work/files_scan.json · inventory.md · 메인은 README 를 읽고 A0 결과에서 «README 요구는 있는데 파일에서 확인 안 된 정보» 를 다시 확인 → 확인할 것 후보로 ② «이어서 지도» 지시에 실어 준다(대조를 기다리며 ① 을 늦추지 않는다) | |
+| ① | 지휘(MAIN) | python3 bookkit/new_book.py <이름> [--task <키트>/task_copy](복사 직후 · A0 가 <책>/work 에 쓴다) → **A0 가 끝나면 A2 · A1(앞 묶음 · 뒤 묶음) · A3 을 같이 띄운다** — 파일 묶음은 지휘가 files_scan.json 으로 나눈다(카드 A1 · 3개 이하면 나누지 않는다) | |
 | ② | A2 | README → reqs.json(끝 신호 PASS) | 지휘가 같은 서브에게 «이어서 지도» → 위 네 상자(확인할 것 · 0 한눈에 · 만들 것 판정 · 1 README 풀이 R · r) |
-| ③ | W1 · W6 · W2(3장 s3.py 만) 동시 | 1 · 3 · 5장 | (② 지도와 동시에) |
+| ③ | W1 · W6 · W2(3장 s3.py 먼저) · W4 동시(A2 PASS 뒤) | 1 · 3 · 5장 + 계약 없이 쓸 칸 전부(W4 는 4장 앞 절반의 그 칸) — 끝나면 숫자 칸 대기로 쉰다 | (② 지도와 동시에) |
 | ④ | 지휘 | build_book.py <책> --stage 1 --strict → 유저에게 1차판 경로 · devview 주소 | |
-| ⑤ | A1 · A3 동시 | A1 자료 → facts.json(2장 함정) · A3 알고리즘 → steps.json(4장 · A3 이 먼저면 "data": "raw") | PASS 뒤 같은 서브에게 «이어서 지도» — A1 = 데이터 사전(2 · 3 · 4 · 5 표 · 6 · 9 — 파일 · 열 · 키 · 형식 · 단위 · 표 잇는 열) / A3 = 5 «가는 길» · 7 계산 규칙(«**N.**» 번호) · 8 계산 |
-| ⑥ | 지휘 | check_contract.py <책>/contracts --task … 셋 함께 PASS → 집필에게 «계약 PASS» | |
-| ⑦ | W2(2장 · 부록) · W3 · W4 · W5 + W1 · W6 숫자 칸 | 나머지 칸 | |
-| ⑧ | 지휘(카드 M) | --stage 2 --strict · check_book → 유저에게 2차판(«새로» 띠) | 1-9 마무리 |
+| ⑤ | A1 · A3(① 부터 ② ~ ④ 와 나란히 돈다) | A1 자료 → facts.json(2장 함정) · A3 알고리즘 → steps.json(4장 · A3 이 먼저면 "data": "raw") | PASS 뒤 같은 서브에게 «이어서 지도» — A1(합친 쪽) = 데이터 사전(2 · 3 · 4 · 5 표 · 6 · 9 — 파일 · 열 · 키 · 형식 · 단위 · 표 잇는 열) / A3 = 5 «가는 길» · 7 계산 규칙(«**N.**» 번호) · 8 계산 |
+| ⑥ | 지휘 | **계약별로 바로**(셋을 기다리지 않는다) — steps PASS → W4 · W5 / facts PASS → W2(2장 · 부록) · W3 / 숫자 칸(W1 · W6)은 그 칸의 계약이 PASS 되는 대로 · steps 가 "data": "raw" 였으면 facts PASS 뒤 A3 에게 정리한 자료로 다시 | |
+| ⑦ | W2(2장 · 부록) · W3 · W4 · W5 + W1 · W6 숫자 칸 | 나머지 칸 — 장이 끝날 때마다 지휘가 중간판(1-0 아래) | |
+| ⑧ | 지휘(카드 M) | check_contract.py <책>/contracts --task … 셋 함께(교차 검사 · 2차판 빌드 전 한 번) PASS → --stage 2 --strict · check_book → 유저에게 2차판(«새로» 띠) | 1-9 마무리 |
+| ⑨ | A3 · A2(카드 P — 각자 계약 PASS · 지도 끝 신호 뒤 · ⑦ ⑧ 과 나란히 · 2차판을 늦추지 않는다) | 쉬운 것만 그래프 준비판(`$graph` 1절) · hand_off 섹션 뼈대 | 1-9 뒤 보고에 합친다 |
 
-- «이어서 지도» = 새 서브가 아니라 **계약을 쓴 그 서브**에게 이어서 지시한다(맥락 그대로) — 칸 쓰는 법은 그 카드의 «이어서 채울 온톨로지 칸»
+- «이어서 지도» = 새 서브가 아니라 **계약을 쓴 그 서브**에게 이어서 지시한다(맥락 그대로 · followup_task) — 칸 쓰는 법은 그 카드의 «이어서 채울 온톨로지 칸»
+- **장별 중간판**(④ 뒤 ~ ⑧ 전) — 장(pv · s2 · s4 · apx)이 끝났다는 끝 신호를 받으면 지휘가 바로 `build_book.py <책> --stage 1 --chapters <지금까지 끝난 장 전부> --label "<N장까지>" --strict` → 유저에게 경로 한 줄(예 --chapters s1,s3,s5,s4 --label 4장까지). 4장 = W4 · W5 둘 다 · 부록 = W2 · W6 둘 다 끝나야 끝이다 · 판 파일 · «새로» 띠는 앞 판 대비로 빌드가 붙인다 · 안 끝난 장 · 빈 칸은 회색 · strict 는 구조 바뀜만 본다
+- **서브 자리표**(세션 상한 8 · ReadyStart -c agents.max_concurrent_threads_per_session=8)
+	- A0 → 끝나면 닫고 그 자리에 A1 앞 묶음 / A1 뒤 묶음 / A2 / A3 / W1 / W6 / W2 / W4 — 끝난 자리에 W5 · W3(계약이 먼저 PASS 된 쪽부터 · 첫 빈자리 = 조각을 내고 닫는 A1 뒤 묶음 · 나누지 않으면 처음부터 빈자리 · 자리가 없으면 먼저 끝나는 자리에 줄을 세운다)
+	- A 서브 셋(A1 합친 쪽 · A2 · A3)은 닫지 않는다 — 구현 때 재배치(main 1-7) · 집필 서브는 자기 카드 끝 신호까지 끝나면 닫는다(숫자 칸 대기로 쉬는 서브는 끝난 게 아니다)
+	- 쉬는 서브에게 다시 일을 줄 땐 followup_task(«이어서 지도» · «<계약> PASS» 모두 · send_message 는 턴을 시작하지 않는다)
+	- 🔴 서브가 도는 동안 지휘는 턴을 끝내지 않는다(main 1-7 · 긴 wait_agent) — 1차판 · 중간판 경로는 턴 중간 메시지로 준다
 - 혼자(직렬)일 때: new_book → A2(+ 지도) → W1 · W6 · W2 3장 → --stage 1 → A1(+ 지도) → A3(+ 지도) → 계약 셋 검사 → W2 2장 · 부록 → W4 → W5 → W6 부록 C → W3 → M
 
 **1-1. 지도 파일 · 칸 주인 — 동시에 써도 안 겹치게**
 - 초안 = scripts/ontology/from_bookkit.py(출발점 — 질문 → 확인할 것 · 요구 → R · 숨은 요구 → 만들 것 판정 · 파일 · 열 머리 → 4 · 9번 · 함정 → 3 · 6번 · 사실 → 7번 후보) — A2 = docs/ONTOLOGY_draft.md · A1 · A3 = --out <책>/work/onto_A1.md · onto_A3.md(그때까지 나온 계약으로) · docs/ONTOLOGY.md 는 도구가 덮지 않는다
 - docs/ONTOLOGY.md 는 A2 가 양식 칸 모양 그대로 처음 채운다(이미 채운 지도면 바꿀 칸만)
-- 칸 주인: A2 = 확인할 것 · 0 · 만들 것 판정 · 1 / A1 = 2 · 3 · 4 · 5 표 · 6 · 9 / A3 = 5 «가는 길» · 7 · 8 — 자기 상자만 패치 · 고치기 직전에 다시 읽기 · 패치가 문맥이 안 맞으면 다시 읽고 다시
+- 칸 주인: A2 = 확인할 것 · 0 · 만들 것 판정 · 1 / A1(합친 쪽) = 2 · 3 · 4 · 5 표 · 6 · 9 / A3 = 5 «가는 길» · 7 · 8 — 자기 상자만 패치 · 고치기 직전에 다시 읽기 · 패치가 문맥이 안 맞으면 다시 읽고 다시
 - A1 · A3 이 찾은 확인할 것 = 확인할 것 표 **끝에 줄만 더한다**(번호 = 계약 항목 id T3 · F2 · C1 — 서로 안 겹친다 · id 가 없으면 A1-1 · A3-1) · 10번 바뀐 기록 = 덧붙이기만
 - 서브는 커밋하지 않는다 — 1-9 에서 지휘가 diff 를 보고 그 파일만
 
@@ -71,12 +78,12 @@ description: 과제를 받은 직후 한 번 쓰는 «과제 파악» 스킬 —
 | 1-7 | 확인할 것 — 질문 문장이 아니라 항목만 · 단계 1 쉬움 → 2 깊음 | 카드 A2 «이어서» |
 | 1-8 | 만들 것 판정 · 0 한눈에 | 카드 A2 «이어서» |
 
-**1-9. 마무리**(⑧ 뒤 · 지휘) — 4절 쉬운 말 검사(위 네 상자) · 0 한눈에 «가장 큰 함정»(A1 뒤) · «지금 상태» 숫자 맞추기 · 10번에 «초안» · git diff 로 세 서브 칸이 다 살았나 본 뒤 docs/ONTOLOGY.md 만 커밋 «지도: 초안 — 확인할 것 N개» · 채팅 보고 = 2차판 경로 + 한눈에 + 확인할 것 번호 목록 + 다음 할 일 한 줄(«담당자에게 보낸 문장 · 받은 답을 붙여 줘») · 담당자에게 보낼 질문 문장은 쓰지 않는다(유저가 쓴다)
+**1-9. 마무리**(⑧ 뒤 · 지휘) — 4절 쉬운 말 검사(위 네 상자) · 0 한눈에 «가장 큰 함정»(A1 뒤) · «지금 상태» 숫자 맞추기 · 10번에 «초안» · git diff 로 세 서브 칸이 다 살았나 본 뒤 docs/ONTOLOGY.md 만 커밋 «지도: 초안 — 확인할 것 N개» · 채팅 보고 = 2차판 경로 + 한눈에 + 확인할 것 번호 목록 + 그래프 준비판 한 줄(⑨ · 카드 P) + 다음 할 일 한 줄(«담당자에게 보낸 문장 · 받은 답을 붙여 줘») · 담당자에게 보낼 질문 문장은 쓰지 않는다(유저가 쓴다)
 
 ## 2. 담당자 답을 받으면
 
 계기 = 유저가 담당자 답을 채팅에 붙여 넣음(유저 결정 · 새 데이터도 같다). 정해지는 즉시 고친다 — 몰아서 하면 다음 세션이 «아직 모른다» 며 같은 걸 또 묻는다.
-고치는 건 **MAIN 의 서브**(지휘는 지시 · diff 확인) — 책 칸은 그 카드를 쓴 서브가 살아 있으면 그 서브에게 이어서 · 지도와 책을 서브 둘에 나누면 쓸 파일이 안 겹치게.
+고치는 건 **MAIN 의 서브**(지휘는 지시 · diff 확인) — 책 칸은 그 카드를 쓴 서브가 살아 있으면 그 서브에게 이어서(followup_task) · 지도와 책을 서브 둘에 나누면 쓸 파일이 안 겹치게.
 
 1. **지도에 반영** — 확인할 것 해당 줄 상태 🟢 · 받은 답 요지 / 확정값을 7 업무 규칙 · 2 ~ 6 · 9 데이터 사전 칸에(근거 추정 → 담당자(시각) · 번호 지우기) / 만들 것 판정 다시 / **답 원문은 10번 바뀐 기록 «계기» 칸에 그대로**(요약하지 않는다) / 답 때문에 새로 생긴 애매함은 새 번호 · 새 데이터 파일이면 A1 «이어서» 부터
 2. **달라지는 곳 목록** — 이 답 때문에 바뀌는 곳을 줄마다 «곳 · 무엇이 바뀌나» 로: 책 숨은 요구(s1-H…) · 질문(s3-Q… · aB-B…) · 함정 처리(s2-T… · 부록 A) · 알고리즘 선택표(4장) · 숫자(numbers 이름) · flowtree 설문 · 노드(id) · 이미 짠 코드 · 테스트(→ docs/hand_off.md 해당 섹션 «작업 중» 에 🔴) — 목록은 지휘에게 보고(flowtree 설문 · 노드는 지휘가 flowtree 명령으로)
@@ -88,7 +95,7 @@ description: 과제를 받은 직후 한 번 쓰는 «과제 파악» 스킬 —
 
 - 계산 코드 · 테스트 전에 3 구별 기준 · 6 경우 · 7 규칙 · 8 계산을 읽는다 — 테스트 이름에 규칙 번호를 붙이면 추적이 쉽다
 - 결과 요약 문서의 «판단 근거 · 남은 확인 사항」은 7번 규칙 · 확인할 것 대기 번호 · 만들 것 판정 🟠 에서
-- flowtree 는 그리기 전(과제 파악 · 의사결정)에 쓰지 않는다 — 책 스티커 답 = 2ND 서브가 bookkit/notes.py(bookkit/README.md «책 스티커»)
+- flowtree 는 ⑨ 준비판부터 쓴다(그 앞 과제 파악에는 쓰지 않는다 · 논의 뒤 보강 = `$graph` 논의 반영) — 책 스티커 답 = 2ND 서브가 bookkit/notes.py(bookkit/README.md «책 스티커»)
 
 ## 4. 쉬운 말 — 유저가 바로 읽을 수 있게
 
@@ -121,7 +128,7 @@ description: 과제를 받은 직후 한 번 쓰는 «과제 파악» 스킬 —
 ## 7. 시험(키트를 고친 뒤)
 
 - v3 동일성: python3 bookkit/engine/same_v3.py [--png <폴더>] → 블록 169 바이트 같음(자체 시험 책이 없으면 SKIP)
-- 판 · 블록 ID · «새로»: python3 bookkit/engine/test_stage.py · 책 스티커: python3 bookkit/engine/test_notes.py
+- 판 · 중간판 · 블록 ID · «새로»: python3 bookkit/engine/test_stage.py · 책 스티커: python3 bookkit/engine/test_notes.py
 - 계약: python3 bookkit/contracts/check_contract.py bookkit/books/_selftest_v3/contracts --render · 빈 양식 빌드: python3 bookkit/engine/build_book.py bookkit/template(빈 칸 목록만 · 실패 없음)
-- 분석 틀: python3 bookkit/analysis/<틀>.py --demo --out /tmp/s.json && python3 bookkit/contracts/check_contract.py /tmp/s.json --render(틀 셋)
+- 분석 틀: python3 bookkit/analysis/<틀>.py --demo --out /tmp/s.json && python3 bookkit/contracts/check_contract.py /tmp/s.json --render(틀 다섯) · 배치 · 덮기 틀: python3 bookkit/engine/test_coverage.py · 측정 · 관리도 틀(+ 도메인 한 장): python3 bookkit/engine/test_stat_model.py
 - 지도 초안 도구: python3 -m pytest scripts/ontology -q

@@ -1,10 +1,13 @@
 // 코덱스 허브 — devview 모든 보기 좌하단(대화 보기 제외)의 Codex 세션판
-//   행 = 세션(기본 MAIN · INSP · 2ND + 추가 등록) · 닉네임 | effort | 맥락 | 지금 작업 · 행 테두리 = 상태(작업 중 녹색 빙글 · 턴 끝 녹색 점멸 · 오류 빨강 점멸)
+//   행 = 세션(기본 MAIN · 2ND + 추가 등록) · 닉네임 | effort | 맥락 | 지금 작업 · 행 테두리 = 상태(작업 중 녹색 빙글 · 턴 끝 녹색 점멸 · 오류 빨강 점멸)
 //   행 클릭 = 선택(확인 → 점멸 꺼짐) → 누적창(허브 바로 위) + 행 오른쪽 아이콘 트레이(문서 = 직접 입력 · 마법봉 = 역할 magic)
 //   입력창(허브 바로 위 · Enter 줄바꿈 · ✕ 취소 · ✈ 전송 · Esc 로 안 닫힘) · Esc = 행 선택 해제 · 작은 접기 단추
+//   − 단추 = 최소화(세션 이름 칩만 · 화면 좌하단 · 왼쪽 = css --dv-hub-min-left) · + = 최소화 · 접힘 둘 다 풀고 가장 펼친 상태
+//   행 목록 · 칩 줄을 끌면 옮김(drag.js · 상태별 위치 저장) · 더블클릭 = 기본 자리
 //   서버: GET api/hub · api/hub/log · POST api/hub/queue · api/hub/magic
 import { api } from './api.js';
 import { $, h, esc, on, emit, store, toast } from './util.js';
+import { makeMovable } from './drag.js';
 
 // 선 아이콘(Lucide · ISC) — devview 우상단 단추와 같은 굵기 2
 const ICONS = {
@@ -14,6 +17,8 @@ const ICONS = {
   x: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
   down: '<path d="m6 9 6 6 6-6"/>',
   up: '<path d="m18 15-6-6-6 6"/>',
+  minus: '<path d="M5 12h14"/>',
+  plus: '<path d="M5 12h14"/><path d="M12 5v14"/>',
 };
 // 아이콘 svg 글
 // name: ICONS 키
@@ -37,6 +42,10 @@ let inputCtx = null;
 // 접힘 여부 · 확인 기록(thread → 마지막으로 확인한 턴 id) · 쓰던 글(닉네임:종류 → 글)
 //   저장값은 initHub 에서 읽음 — 모듈을 불러오는 순간에는 작업 폴더별 저장 이름(setStoreNs)이 아직 안 정해짐
 let folded = false;
+// 최소화 여부(접힘과 따로 저장 — + 로 풀면 접힘도 풀림)
+let minimized = false;
+// 끌어 옮기기(drag.js) — 위치는 상태별 따로(hub.pos · hub.pos.min)
+let mover = null;
 let seen = {};
 const drafts = {};
 // 허브 상자 · 화면 부품
@@ -88,10 +97,12 @@ export function initHub(info, d) {
   box = $('#hub');
   if (!info.hub || !box) return false;
   folded = !!store.get('hub.folded', false);
+  minimized = !!store.get('hub.min', false);
   seen = store.get('hub.seen', {}) || {};
   box.innerHTML = `
     <div class="dv-hub-rows" role="list"></div>
     <button class="dv-hub-fold" type="button" title="접기 · 펼치기">${ic('down')}</button>
+    <button class="dv-hub-min" type="button" title="최소화">${ic('minus')}</button>
     <div class="dv-hub-acc" hidden><div class="dv-hub-acc-body"></div></div>
     <div class="dv-hub-input" hidden><div class="dv-hub-input-head"></div><textarea spellcheck="false"></textarea></div>
     <div class="dv-hub-acts" hidden>
@@ -102,7 +113,7 @@ export function initHub(info, d) {
       <button class="dv-hub-tic" type="button" data-act="doc" title="직접 입력 — 그 세션에 codex queue">${ic('doc')}</button>
       <button class="dv-hub-tic" type="button" data-act="wand" title="마법봉 — 그 세션의 magic">${ic('wand')}</button>
     </div>`;
-  el = { rows: $('.dv-hub-rows', box), fold: $('.dv-hub-fold', box), acc: $('.dv-hub-acc', box), accBody: $('.dv-hub-acc-body', box),
+  el = { rows: $('.dv-hub-rows', box), fold: $('.dv-hub-fold', box), min: $('.dv-hub-min', box), acc: $('.dv-hub-acc', box), accBody: $('.dv-hub-acc-body', box),
     input: $('.dv-hub-input', box), head: $('.dv-hub-input-head', box), ta: $('.dv-hub-input textarea', box),
     acts: $('.dv-hub-acts', box), tray: $('.dv-hub-tray', box) };
   // 지연 없는 툴팁 — 브라우저 기본 title 은 1초쯤 늦어서 직접 그림
@@ -119,6 +130,10 @@ export function initHub(info, d) {
   });
   el.rows.addEventListener('scroll', placeTray);
   el.fold.addEventListener('click', () => setFolded(!folded));
+  // − = 최소화 · + = 최소화 · 접힘 둘 다 풀기(가장 펼친 상태)
+  el.min.addEventListener('click', () => {
+    if (minimized) { setMin(false); setFolded(false); } else setMin(true);
+  });
   el.tray.addEventListener('click', (e) => {
     // 누른 아이콘
     const a = e.target.closest('[data-act]')?.dataset.act;
@@ -137,7 +152,11 @@ export function initHub(info, d) {
   // Esc — 행 선택 해제(입력창이 열려 있으면 아무것도 안 함 — 그래프 노드 선택 해제와 겹쳐서)
   on('escape', () => { if (mode !== 'input' && picked) pick(null); });
   on('view', () => syncView());
+  // 끌기 손잡이 = 행 목록 · 칩 줄(단추 · 입력창 · 누적창은 손잡이 밖) · 펼친 상태는 위로 뜨는 누적창(160) · 오른쪽 전송 단추(180)까지 화면에 남김
+  mover = makeMovable(box, el.rows, () => (minimized ? 'hub.pos.min' : 'hub.pos'),
+    { keep: () => (minimized ? {} : { top: 160, right: 180 }) });
   setFolded(folded, false);
+  setMin(minimized, false);
   syncView();
   poll();
   return true;
@@ -148,6 +167,7 @@ function syncView() {
   if (!box) return;
   box.hidden = ['chat', 'book'].includes(deps.view?.());
   if (box.hidden) el.tip.hidden = true;
+  else mover?.apply();
 }
 
 // 접기 · 펼치기 — 접으면 한 줄(세션 이름 + 상태 테두리)
@@ -158,6 +178,22 @@ function setFolded(v, save = true) {
   el.fold.innerHTML = ic(folded ? 'up' : 'down');
   el.fold.title = folded ? '펼치기' : '접기';
   if (save) store.set('hub.folded', folded);
+  paint();
+}
+
+// 최소화 · 풀기 — 최소화하면 세션 이름 칩만(좌하단) · 고른 행 · 누적창 · 입력창은 닫음(쓰던 글은 남김)
+// v: 최소화 여부 / save: 저장 여부
+function setMin(v, save = true) {
+  minimized = v;
+  if (minimized) {
+    picked = null;
+    if (mode === 'input') closeInput(false);
+    closeAcc();
+  }
+  box.classList.toggle('is-min', minimized);
+  el.min.innerHTML = ic(minimized ? 'plus' : 'minus');
+  el.min.title = minimized ? '펼치기' : '최소화';
+  if (save) store.set('hub.min', minimized);
   paint();
 }
 
@@ -182,7 +218,7 @@ let painted = '';
 function paint() {
   if (!el.rows) return;
   // 그릴 내용 표시
-  const sig = JSON.stringify([rows, picked, folded, seen]);
+  const sig = JSON.stringify([rows, picked, folded, minimized, seen]);
   if (sig === painted) { placeTray(); return; }
   painted = sig;
   el.rows.innerHTML = rows.map((r) => {
@@ -197,13 +233,15 @@ function paint() {
       + `<span class="dv-hub-st" data-tip-auto="1">${esc(off ? '미연결' : r.status || (r.done?.error ? `오류: ${r.done.error}` : ''))}</span>`
       + '</div>';
   }).join('');
-  // 접은 한 줄 — 세션 이름 칩(상태 테두리 같은 규칙)
-  if (folded) {
-    el.rows.innerHTML = `<div class="dv-hub-chips">${rows.filter((r) => r.registered).map((r) => {
+  // 접은 한 줄 · 최소화 — 세션 이름 칩(상태 테두리 같은 규칙)
+  if (folded || minimized) {
+    el.rows.innerHTML = `<div class="dv-hub-chips" title="끌어서 옮기기 · 더블클릭 = 기본 자리">${rows.filter((r) => r.registered).map((r) => {
       const st = rowState(r);
       return `<span class="dv-hub-chip${st ? ` m-${st}` : ''}">${esc(r.label)}</span>`;
     }).join('') || '<span class="dv-hub-chip is-off">허브</span>'}</div>`;
   }
+  // 크기 · 상태가 바뀌었을 수 있음 — 그 상태의 저장 자리로 다시 놓고 화면 안으로
+  mover?.apply();
   placeTray();
 }
 
@@ -227,7 +265,7 @@ function pick(nick) {
 function placeTray() {
   if (!el.tray) return;
   // 고른 행 칸
-  const row = picked && !folded ? el.rows.querySelector(`.dv-hub-row[data-nick="${CSS.escape(picked)}"]`) : null;
+  const row = picked && !folded && !minimized ? el.rows.querySelector(`.dv-hub-row[data-nick="${CSS.escape(picked)}"]`) : null;
   if (!row) { el.tray.hidden = true; return; }
   // 목록 칸 안 위치
   const top = row.offsetTop - el.rows.scrollTop;
@@ -344,7 +382,7 @@ async function sendInput() {
 }
 
 // ======= 마법봉 =======
-// main · insp = 그래프에서 고른 노드로 바로 · 2nd = 누른 순간의 선택을 스냅샷 → 질문 입력창
+// main = 그래프에서 고른 노드(작업 · 검증 · 질문)로 바로 · 2nd = 누른 순간의 선택을 스냅샷 → 질문 입력창
 // nick: 닉네임
 async function wand(nick) {
   // 고른 행
@@ -359,10 +397,10 @@ async function wand(nick) {
   }
   // 그래프 선택
   const fs = deps.ftSel?.() || { nodes: [] };
-  // 보낼 노드 — insp 는 검증 노드만(서버 · 스크립트도 한 번 더 거름)
-  const nodes = r.role === 'insp' ? (fs.nodes || []).filter((n) => n.kind === 'verify') : (fs.nodes || []);
+  // 보낼 노드 — 종류별 분배는 MAIN 몫(서버 · 스크립트가 트리 종류로 나눔)
+  const nodes = fs.nodes || [];
   if (!nodes.length) {
-    toast(r.role === 'insp' ? '검증 노드 없음 — 그래프에서 검증 노드를 고르기(Ctrl+클릭 여럿)' : '노드를 고르지 않음 — 그래프에서 노드를 고르기(Ctrl+클릭 여럿)', 'bad', 4000);
+    toast('노드를 고르지 않음 — 그래프에서 노드를 고르기(Ctrl+클릭 여럿)', 'bad', 4000);
     return;
   }
   try {
@@ -372,6 +410,18 @@ async function wand(nick) {
   } catch (e) {
     toast(`마법봉 실패 — ${e.message}`, 'bad', 6000);
   }
+}
+
+// 단축키 마법봉 — 그 역할 행의 마법봉 단추와 같은 동작(main.js 가 부름)
+// role: main · 2nd
+export function hubWand(role) {
+  // 그 역할의 행
+  const r = rows.find((x) => x.role === role);
+  if (!r) { toast(`${role.toUpperCase()} 세션 없음`, 'bad'); return; }
+  if (role === '2nd' && box.hidden) { toast('이 보기에서는 2ND 마법봉을 쓸 수 없음', 'bad'); return; }
+  if (mode === 'input' && inputCtx?.kind === 'magic' && inputCtx.nick === r.nick) { el.ta.focus(); return; }
+  if (minimized) setMin(false);
+  wand(r.nick);
 }
 
 // 지금 보기의 선택 스냅샷 — {view, selection, label, mark}
@@ -417,4 +467,4 @@ function onTip(e) {
 }
 
 // 시험 · 디버깅용
-export const hubDebug = () => ({ picked, mode, folded, rows: rows.map((r) => ({ nick: r.nick, state: rowState(r) })), inputCtx });
+export const hubDebug = () => ({ picked, mode, folded, minimized, rows: rows.map((r) => ({ nick: r.nick, state: rowState(r) })), inputCtx });

@@ -6,7 +6,7 @@
 화면(static/)
 - 코드 탭: 파일 트리 · Monaco 편집기(PyCharm Dark 색 · 키맵) · md 는 mdview 라이브 프리뷰 편집기
 - Git 탭 : 브랜치 그래프 · 커밋 상세 · 파일별 diff · 파일 이력 · 커밋하지 않은 변경
-- 그래프 탭: flowtree(기능 · 결정 트리 · 코드 연결) — /ft/ 아래로 연결 · 처음 화면 · Alt+Q 로 코드와 오감
+- 그래프 탭: flowtree(기능 · 결정 트리 · 코드 연결) — /ft/ 아래로 연결 · 처음 화면 · Alt+Q = MAIN 마법봉
 서버
 - 파일 저장은 디스크 내용 해시 대조. 다른 곳(공식 IDE · Codex)이 먼저 고쳤으면 409 응답, 덮어쓰기 없음
 - 인코딩(UTF-8 · UTF-8 BOM · CP949) · 줄바꿈(LF · CRLF) · 파일 권한은 원래 파일 기준 유지
@@ -55,6 +55,10 @@ try:
     import codex_hub             # 코덱스 허브(같은 폴더) — 없으면 /api/hub 가 404
 except ImportError:
     codex_hub = None
+try:
+    import notify                # 알림 종(같은 폴더) — 없으면 /api/notify 가 404 · 화면에 종 없음
+except ImportError:
+    notify = None
 
 ROOT = None                      # 작업 폴더(절대 경로)
 KIT = None                       # 키트 폴더 — 문서 단축키 · flowtree 기본 tree · Book · 설문 저장소 · 허브 기준(ROOT/kit 에 AGENTS.md 가 있으면 그것 · 없으면 ROOT · --kit)
@@ -1364,7 +1368,7 @@ def api_poll(q):
 def api_info(q):
     return {"version": VERSION, "root": str(ROOT), "name": ROOT.name or str(ROOT), "pid": os.getpid(),
             "python": sys.version.split()[0], "git": api_git_info(q), "survey": SURVEY is not None,
-            "flowtree": ft_info(), "start_view": START_VIEW, "hub": codex_hub is not None,
+            "flowtree": ft_info(), "start_view": START_VIEW, "hub": codex_hub is not None, "notify": notify is not None,
             "port": PORT, "page_port": PAGE_PORT, "kit": rel_of(KIT), "kit_abs": str(KIT)}
 
 
@@ -1428,6 +1432,11 @@ def api_hub_log(q):
 
 def api_hub_chat(q):
     return hub_call("chat", KIT, q.get("nick"), int(q.get("after") or 0))
+
+
+# GET /api/hub/subagents?nick= — 그 세션의 서브 상태
+def api_hub_subagents(q):
+    return hub_call("subagents", KIT, q.get("nick"))
 
 
 # POST /api/hub/queue {nick, text} · POST /api/hub/magic {nick, view, selection, question}
@@ -1519,6 +1528,9 @@ def load_survey(given):
             continue
         # 키트의 docs/surveys 는 등록 목록에 없어도 늘 보임
         mod.EXTRA_STORES.append(KIT / "docs" / "surveys")
+        # 제출 때 MAIN · 2ND 전송 — 이 devview 의 허브(키트 .codex-hub)를 그대로 씀(옛 survey.py 면 칸만 생기고 안 씀)
+        if codex_hub is not None:
+            mod.HUB, mod.HUB_ROOT = codex_hub, KIT
         log(logging.INFO, "연결", "설문", str(p))
         return mod
     return None
@@ -1558,14 +1570,58 @@ def api_state_post(b):
     return {"ok": True, "keys": len(data)}
 
 
+# ======= 알림 종(notify.py — 같은 폴더) =======
+# 저장 = <키트>/.codex-hub/notify.jsonl(덧붙이기) · 자동 수집 = 서버 뒤 스레드(Collector) · 화면 = static/js/notify.js
+NOTIFY_FEED = None
+
+
+def need_notify():
+    if NOTIFY_FEED is None:
+        raise HttpError(404, "notify.py 없음")
+    return NOTIFY_FEED
+
+
+# GET /api/notify — 알림 목록(최근 것이 위) · 안 읽은 개수
+def api_notify(q):
+    return need_notify().view()
+
+
+# POST /api/notify/read — {ids: [...]} 또는 {all: true}
+def api_notify_read(b):
+    feed = need_notify()
+    ids = feed.view(limit=0)["unread_ids"] if b.get("all") else b.get("ids")
+    if not isinstance(ids, list):
+        raise HttpError(400, "형식은 {ids: [...]} 또는 {all: true}")
+    notify.mark_read(KIT, ids)
+    return feed.view()
+
+
+# 책 폴더 이름 → 그 책 마지막 판 html(작업 폴더 기준 · Book 목록과 같은 규칙)
+def notify_book_path(book):
+    return next((b["path"] for b in api_books({})["books"] if b["book"] == book), None)
+
+
+# 알림 수집 시작 — 서버가 뜰 때 한 번
+def notify_start():
+    global NOTIFY_FEED
+    if notify is None:
+        return
+    NOTIFY_FEED = notify.Feed(KIT)
+    notify.feed_path(KIT).parent.mkdir(parents=True, exist_ok=True)
+    notify.feed_path(KIT).touch()        # 세션의 notify.py 가 위로 찾을 수 있게
+    col = notify.Collector(KIT, tree_path=lambda: FT_WS.tree_path if FT_WS else None, survey=SURVEY, hub=codex_hub,
+                           book_path=notify_book_path)
+    col.start(1.5, log=lambda m: log(logging.WARNING, "실패", "알림", m))
+
+
 GET_ROUTES = {"info": api_info, "tree": api_tree, "file": api_file, "search": api_search, "symbols": api_symbols,
               "poll": api_poll, "git/info": api_git_info, "git/log": api_git_log, "git/commit": api_git_commit,
               "git/status": api_git_status, "git/blob": api_git_blob, "git/file-log": api_git_file_log,
               "git/blame": api_git_blame, "state": api_state_get, "office": api_office,
               "codex/sessions": api_codex_sessions,
-              "hub": api_hub, "hub/log": api_hub_log, "hub/chat": api_hub_chat, "books": api_books}
+              "hub": api_hub, "hub/log": api_hub_log, "hub/chat": api_hub_chat, "hub/subagents": api_hub_subagents, "books": api_books, "notify": api_notify}
 POST_ROUTES = {"save": api_save, "create": api_create, "capture": api_capture, "state": api_state_post,
-               "hub/queue": api_hub_queue, "hub/magic": api_hub_magic}
+               "hub/queue": api_hub_queue, "hub/magic": api_hub_magic, "notify/read": api_notify_read}
 
 
 # ======= HTTP =======
@@ -1711,12 +1767,16 @@ class Handler(BaseHTTPRequestHandler):
 
 # ======= 책 스티커(페이지 서버) — 책 html 의 book.js 가 같은 출처의 «api/notes»(상대 경로)로 저장 · 읽기 =======
 # 저장 = 작업 폴더 안 notes.json — 책 html 이 «…/dist/» 아래면 그 위 책 폴더(bookkit/books/<책>/notes.json), 아니면 html 옆
-# 항목 = {id, ts, doc, slide, x, y, w, h, ctx(«… | b=<블록 ID>»), text} + 답(answer · answer_ts — bookkit/notes.py answer 가 단다)
+# 항목 = {id, ts, doc, slide, x, y, w, h, ctx(«… | b=<블록 ID>»), text} + 답(answer · answer_ts · title — bookkit/notes.py answer 가 단다)
+#   + 꼬리 질문 thread [{id(t1 …), q, ts, magic_rid, a, a_ts}] — 책 아래 질문 줄 행 안에서 이어 묻기(답은 notes.py answer --thread)
 # 스티커 파일 쓰기 잠금
 NOTES_LOCK = threading.Lock()
-# 스티커 한 장 글 최대 길이 · 파일 하나의 최대 장 수
+# 스티커 한 장 글 최대 길이 · 파일 하나의 최대 장 수 · 스티커 하나의 꼬리 질문 최대 수
 NOTES_MAX_TEXT = 2000
 NOTES_MAX = 2000
+NOTES_MAX_THREAD = 50
+# 마법봉 보내는 중인 (notes.json, 스티커 id, 꼬리 id) — 동시에 두 번 눌러도 한 번만 보냄
+NOTES_SENDING = set()
 
 
 def notes_file(prefix):
@@ -1743,11 +1803,16 @@ def notes_save(p, notes):
 
 
 def notes_api(method, prefix, rest, query, raw):
-    """스티커 API — GET ?doc= 목록 · POST 새로 · PATCH /<id> 글 · 자리 · 크기 · DELETE /<id> → (상태 코드, 응답 dict | list)"""
+    """스티커 API — GET ?doc= 목록 · POST 새로 · PATCH /<id> 글 · 자리 · 크기 · DELETE /<id>
+    · POST /<id>/magic · POST /<id>/thread {q} 꼬리 질문 · POST /<id>/thread/<꼬리 id>/magic → (상태 코드, 응답 dict | list)"""
     p = notes_file(prefix)
     nid = rest.strip("/")
-    if method == "POST" and nid.endswith("/magic"):
-        return note_magic_api(p, nid[:-6])
+    # 하위 경로(마법봉 · 꼬리 질문)
+    sub = nid.split("/")
+    if method == "POST" and len(sub) == 2 and sub[1] == "magic":
+        return note_magic_api(p, sub[0])
+    if method == "POST" and len(sub) == 4 and sub[1] == "thread" and sub[3] == "magic":
+        return note_magic_api(p, sub[0], sub[2])
     body = {}
     if method in ("POST", "PATCH"):
         try:
@@ -1775,6 +1840,25 @@ def notes_api(method, prefix, rest, query, raw):
             p.parent.mkdir(parents=True, exist_ok=True)
             notes_save(p, notes)
             return 201, note
+        if method == "POST" and len(sub) == 2 and sub[1] == "thread":
+            # 꼬리 질문 — 원 질문에 답이 달린 뒤만(행 안에서 이어 묻기) · 반환 = 스티커 전체
+            hit = next((n for n in notes if n.get("id") == sub[0]), None)
+            if hit is None:
+                raise HttpError(404, "그런 스티커 없음")
+            if not hit.get("answer"):
+                raise HttpError(409, "원 질문 답 대기 중")
+            q = str(body.get("q", "")).strip()
+            if not q or len(q) > NOTES_MAX_TEXT:
+                raise HttpError(400, "글이 비었거나 너무 김")
+            th = [t for t in hit.get("thread") or [] if isinstance(t, dict)]
+            if len(th) >= NOTES_MAX_THREAD:
+                raise HttpError(507, "꼬리 질문이 너무 많음")
+            # 꼬리 id — 이 스티커 안에서 고유(t1 · t2 …)
+            k = max([int(t["id"][1:]) for t in th if re.fullmatch(r"t\d+", str(t.get("id") or ""))] or [0]) + 1
+            th.append({"id": f"t{k}", "q": q, "ts": time.strftime("%Y-%m-%d %H:%M:%S")})
+            hit["thread"] = th
+            notes_save(p, notes)
+            return 201, hit
         hit = next((n for n in notes if n.get("id") == nid), None) if nid else None
         if hit is None:
             raise HttpError(404, "그런 스티커 없음")
@@ -1797,22 +1881,40 @@ def notes_api(method, prefix, rest, query, raw):
     raise HttpError(405, "허용 안 됨")
 
 
-def note_magic_api(p, nid):
-    """POST …/api/notes/<id>/magic — 그 스티커 글 · 자리로 2ND 마법봉(허브) · 본문은 안 읽음(서버가 notes.json 에서 다시 읽음)
-    답이 달리기 전 같은 스티커 재요청은 409 · 반환 (상태 코드, {ok, rid})"""
+def note_magic_api(p, nid, tid=None):
+    """POST …/api/notes/<id>/magic · …/<id>/thread/<꼬리 id>/magic — 그 스티커(꼬리 질문) 글 · 자리로 2ND 마법봉(허브)
+    본문은 안 읽음(서버가 notes.json 에서 다시 읽음) · 답이 달리기 전 같은 질문 재요청은 409(꼬리는 꼬리 단위) · 반환 (상태 코드, {ok, rid})"""
+    key = (str(p), nid, tid)
     with NOTES_LOCK:
         hit = next((n for n in notes_load(p) if n.get("id") == nid), None)
-    if hit is None:
-        raise HttpError(404, "그런 스티커 없음")
-    if hit.get("magic_rid") and not hit.get("answer"):
-        raise HttpError(409, f"이미 보냄({hit['magic_rid']}) — 답을 기다리는 중")
+        if hit is None:
+            raise HttpError(404, "그런 스티커 없음")
+        # 판정 대상 — 원 질문 또는 그 꼬리 질문
+        cur = hit
+        if tid:
+            cur = next((t for t in hit.get("thread") or [] if isinstance(t, dict) and t.get("id") == tid), None)
+            if cur is None:
+                raise HttpError(404, "그런 꼬리 질문 없음")
+        if (cur.get("magic_rid") and not cur.get("a" if tid else "answer")) or key in NOTES_SENDING:
+            raise HttpError(409, f"이미 보냄({cur.get('magic_rid') or '보내는 중'}) — 답을 기다리는 중")
+        NOTES_SENDING.add(key)
     # queue 는 잠금 밖에서(최대 30초)
-    res = hub_call("note_magic", KIT, hit, p, str(hit.get("doc") or ""))
+    try:
+        res = hub_call("note_magic", KIT, hit, p, str(hit.get("doc") or ""), **({"tid": tid} if tid else {}))
+    finally:
+        with NOTES_LOCK:
+            NOTES_SENDING.discard(key)
     with NOTES_LOCK:
         notes = notes_load(p)
         for n in notes:
-            if n.get("id") == nid:
+            if n.get("id") != nid:
+                continue
+            if not tid:
                 n["magic_rid"] = res.get("id")
+                continue
+            for t in n.get("thread") or []:
+                if isinstance(t, dict) and t.get("id") == tid:
+                    t["magic_rid"] = res.get("id")
         notes_save(p, notes)
     return 200, {"ok": True, "rid": res.get("id")}
 
@@ -1911,7 +2013,7 @@ def main():
     ap.add_argument("--kit", default=None, help="키트 폴더(작업 폴더 안) — 기본: 작업 폴더/kit 에 AGENTS.md 가 있으면 그것 · 없으면 작업 폴더")
     ap.add_argument("--tree", default=None, help="그래프 tree.json 경로 (기본: 작업 폴더/docs/flowtree/tree.json)")
     ap.add_argument("--start-view", default="graph", choices=["graph", "code"],
-                    help="처음 보기 (기본 graph — 그래프 화면 · Alt+Q 로 코드와 오감)")
+                    help="처음 보기 (기본 graph — 그래프 화면)")
     a = ap.parse_args()
     if sys.version_info < (3, 8):
         sys.exit("파이썬 3.8 이상 필요")
@@ -1927,6 +2029,7 @@ def main():
     SURVEY = load_survey(a.survey)
     FT = load_flowtree(a.tree)
     START_VIEW = a.start_view
+    notify_start()
     try:
         srv = ThreadingHTTPServer((a.host, a.port), Handler)
     except OSError as e:
@@ -1950,7 +2053,7 @@ def main():
     print(f"  설문 {'연결 (위쪽 «설문» 탭)' if SURVEY else '없음'}", flush=True)
     print(f"  페이지 {f'포트 {PAGE_PORT} (md 의 .html 링크를 여기서 엶)' if PAGE_PORT else '꺼짐'}", flush=True)
     print(f"  그래프 {'연결 (' + str(FT_WS.tree_path) + (')' if FT_WS.tree_path.is_file() else ' — 아직 없음)') if FT else 'flowtree 없음'}"
-          " · Alt+Q 로 코드와 오감", flush=True)
+          " · Alt+Q = MAIN 마법봉", flush=True)
     try:
         srv.serve_forever()
     except KeyboardInterrupt:

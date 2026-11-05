@@ -199,11 +199,14 @@ def check(tree, auto=None, user=None, root=None):
         if nid in nodes:
             add("error", "dup-id", nid, f"id 중복: {nid}")
         nodes[nid] = n
+        # 빈 틀 노드 — 채워지기 전에는 점검 안 함
+        if n.get("frame"):
+            continue
         if n.get("kind") not in NODE_KINDS:
             add("error", "bad-kind", nid, f"모르는 종류 «{n.get('kind')}»")
-        if not n.get("title"):
+        if not n.get("title") and not n.get("pos0"):
             add("error", "no-title", nid, "제목 없음")
-        elif len(n["title"]) > TITLE_MAX and n.get("kind") not in ("verify", "question", "survey") and not n.get("auto"):
+        elif len(n.get("title") or "") > TITLE_MAX and n.get("kind") not in ("verify", "question", "survey") and not n.get("auto"):
             add("warn", "title-long", nid, f"제목 {len(n['title'])}자 — {TITLE_MAX}자 안으로(카드 두 줄)")
 
         if n.get("kind") == "task" and len(str(n.get("summary") or "")) > SUMMARY_MAX:
@@ -217,7 +220,7 @@ def check(tree, auto=None, user=None, root=None):
             opts = n.get("options")
             if not isinstance(opts, list) or not opts:
                 # 유저가 노드 추가 단추로 만든 설문 — 선택지는 아직 없음(경고만)
-                if n.get("by") == "user" and isinstance(opts, list):
+                if (n.get("by") == "user" or n.get("pos0")) and isinstance(opts, list):
                     add("warn", "survey-options", nid, "설문 선택지 없음 — 유저가 만든 설문")
                 else:
                     add("error", "survey-options", nid, "설문 선택지 없음")

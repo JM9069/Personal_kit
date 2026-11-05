@@ -50,8 +50,8 @@ done
 echo "스킬 → $SK :${added:- (새로 넣은 것 없음)} · Codex 를 새로 띄우면 \$ 목록에 보임"
 
 # ======= 키트 안 스킬 폴더 이름 바꿈(.agents → skills) =======
-# 키트 = 작업 폴더라 MAIN · INSP · 2ND 는 키트에서 뜬다(ReadyStart.md 명령) — 키트에 .agents/skills 가 남아 있으면
+# 키트 = 작업 폴더라 MAIN · 2ND 는 키트에서 뜬다(ReadyStart.md 명령) — 키트에 .agents/skills 가 남아 있으면
 # ~/.codex/skills 와 같은 이름 스킬이 두 곳에 생겨 «$이름» 이 안 불릴 수 있다 → 설치본만 이름을 바꾼다(원본 저장소는 그대로)
 mv "$DEST/.agents" "$DEST/skills_src"
 
-echo "다음: 새 터미널 탭에서 codex → \$ready-start  ← 맨 먼저 kit/ReadyStart.md(MAIN · INSP · 2ND · devview 띄우는 명령)를 쓰고 준비를 계속한다 — 그 명령으로 세 세션을 바로 띄운다"
+echo "다음: 새 터미널 탭에서 codex → \$ready-start  ← 맨 먼저 kit/ReadyStart.md(MAIN · 2ND · devview 띄우는 명령)를 쓰고 준비를 계속한다 — 그 명령으로 두 세션을 바로 띄운다"

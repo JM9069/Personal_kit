@@ -12,6 +12,15 @@ def build(w):
     K = kit.slots(w, "s1", fill())
     S = kit.slots(w, "shared", shared.values())
     w.chapter("1", K["제목"], K["질문"])
+    if "도메인_제목" in K.v:  # 도메인 한 장 — 칸이 있는 양식만(v3 · 옛 책은 칸이 없어 블록도 없다 — v3 와 같은 책)
+        fns, dl = {}, ""
+        for name, key in (("무엇을 재나", "도메인_재는_것"), ("단위", "도메인_단위"), ("무엇이 나쁜가", "도메인_나쁜_것"), ("현장에서 고치는 법", "도메인_고치는_법")):
+            t, f = K.tf(key)
+            fns.update(f or {})
+            dl += f"<dt>{kit.esc(name)}</dt><dd>{w.t(t)}</dd>"
+        head = K["도메인_제목"]
+        w.key("도메인")
+        w.html(f'<div class="qi"><p class="qh">{w.t(head)}</p><dl>{dl}</dl></div>', fn=fns or None)
     w.p(*K.tf("무엇을"))
     w.p(*K.tf("입력_종류"))
     if S.need("그림_큰흐름"):

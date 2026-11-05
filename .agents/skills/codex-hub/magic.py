@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
-# 허브 마법봉 요청 처리 — main-magic · insp-magic · 2nd-magic 공용 · 표준 라이브러리만
+# 허브 마법봉 요청 처리 — main-magic · 2nd-magic 공용 · 표준 라이브러리만
 """
 요청 = devview 가 마법봉을 누른 순간 쓴 <작업 폴더>/.codex-hub/requests/<요청id>.json(보기 · 고른 노드 · 파일 · 줄 · 글자 · 질문)
   python3 ~/.codex/skills/codex-hub/magic.py show 요청id                고른 대상 · 할 일 · 답 자리(상태 줄은 여기서 바꿈 · 2ND 질문 노드는 답변 준비 중으로)
   python3 ~/.codex/skills/codex-hub/magic.py answer-node 요청id --short '결론(60자)' '본문'
   python3 ~/.codex/skills/codex-hub/magic.py answer-md 요청id '답'     md · txt — 고른 것 없음 = 맨 위 «🤖 질문 · 답변» 절 · 고른 글자 = 그 문단 아래 · 표 = 고른 행 아래 새 행
   python3 ~/.codex/skills/codex-hub/magic.py answer-code 요청id '답'   코드 — 고른 줄 아래 주석 · 고른 줄 없음 = 파일 맨 위(실행 · 인코딩 줄 아래)
-  python3 ~/.codex/skills/codex-hub/magic.py answer-form 요청id '답'   CSV · PDF · 그 밖 — 설명 폼(저장소 밖 /tmp/sv · devview 설문 탭)
-  python3 ~/.codex/skills/codex-hub/magic.py answer-note 요청id '답'   책 스티커 — 그 스티커 answer 칸(bookkit/notes.py answer)
+  python3 ~/.codex/skills/codex-hub/magic.py answer-form 요청id '답'   CSV · PDF · 그 밖 · 설문 질문 문항 — 설명 폼(저장소 밖 /tmp/sv · devview 설문 탭)
+  설문 제출 요청(답 자리 survey) — show 가 MAIN 에는 확정 문항 · 할 일, 2ND 에는 질문 문항 · answer-form 명령을 보여 줌
+  python3 ~/.codex/skills/codex-hub/magic.py answer-note 요청id '답' --title '짧은 제목'   책 스티커 — 그 스티커 answer 칸 · 꼬리 질문 요청이면 그 꼬리 답(bookkit/notes.py answer)
 출력: 성공 한 줄(show 는 몇 줄) · 실패 «실패: 원인» + 종료코드 1
 """
 from __future__ import annotations
@@ -125,7 +126,7 @@ def target_path(req):
 
 
 # ======= show =======
-# main — 고른 노드 중 hand_off 작업 노드 · 나머지는 맥락
+# main — 고른 노드 중 hand_off 작업 · 검증 · 질문 노드를 종류별 할 일로 · 나머지는 맥락
 # req: 요청 / out: 출력 줄 목록
 def show_main(req, out):
     store, ftcli, tp = flowtree(req)
@@ -139,43 +140,36 @@ def show_main(req, out):
     # hand_off 작업 노드(옛 이름 adr 도 받음)
     work = [i for i in ids if i in nodes and nodes[i].get("kind") == "task" and store.graph_of(nodes, nodes[i]) in ("adr", "hand_off")
             and i not in moved]
+    # 검증 · 질문 노드(종류는 트리 기준 — 화면이 보낸 종류만 믿지 않음)
+    ver = [i for i in ids if nodes.get(i, {}).get("kind") == "verify"]
+    ask = [i for i in ids if nodes.get(i, {}).get("kind") == "question"]
     for i in ids:
-        if i in work:
+        if i in work or i in ver or i in ask:
             out.extend(ftcli.show_lines(tree, i, now))
         elif i in nodes:
             out.append("맥락: " + ftcli.node_line(nodes[i], nodes, now) + (f" — {nodes[i]['summary']}" if nodes[i].get("summary") else ""))
         else:
             out.append(f"맥락: {i}")
-    if not work:
-        out.append("멈춤: 고른 노드에 hand_off 작업 노드 없음 — 노드를 만들지 말고 유저에게 무엇을 할지 묻고 턴을 끝낸다")
-        set_status("확인 : 마법봉 — hand_off 작업 노드 없음 · 유저 확인 대기")
+    if not work and not ver and not ask:
+        out.append("멈춤: 고른 노드에 작업 · 검증 · 질문 노드 없음 — 노드를 만들지 말고 유저에게 무엇을 할지 묻고 턴을 끝낸다")
+        set_status("확인 : 마법봉 — 작업 · 검증 · 질문 노드 없음 · 유저 확인 대기")
         return
-    out.append(f"할 일: {' · '.join(work)} — 하나씩 python3 devview/flowtree/flowtree.py --role main start <id> → 내 서브에게 구현을 시킨다"
-               " → 서브 커밋을 확인하고 done <id>")
+    if work:
+        out.append(f"할 일: {' · '.join(work)} — 하나씩 python3 devview/flowtree/flowtree.py --role main start <id> → 구현 서브에게 시킨다"
+                   " → 서브 커밋을 확인하고 done <id>")
+    if ver:
+        out.append(f"검증 할 일: {' · '.join(ver)} — 검증관에게 고정 양식(섹션 번호 · 성공 기준 · 커밋 해시 · 볼 파일 · 축)으로 준다"
+                   " · 검증관이 flowtree.py --role insp verify-start · run 을 직접 남긴다")
+    if ask:
+        out.append(f"질문 할 일: {' · '.join(ask)} — 놀고 있는 서브에게 답을 시킨다"
+                   "(flowtree.py --role 2nd answer-start <id> → answer <id> --short '결론(60자)' '본문')")
+    if not work:
+        set_status(f"확인 : 마법봉 {' · '.join(ver + ask)[:60]}")
+        return
     # 첫 작업 노드 · 그 hand_off 절 번호(연결 문서 앵커)
     n = nodes[work[0]]
     anchor = str((n.get("doc") or {}).get("anchor") or "") if isinstance(n.get("doc"), dict) else ""
     set_status(f"❇️_{anchor} : 작업. {short(n.get('title'), 40)}" if re.match(r"^\d+(-\d+)*$", anchor) else f"작업 : {short(n.get('title'), 40)}")
-
-
-# insp — 고른 노드 중 검증 노드만(devview 가 이미 거름 · 한 번 더)
-# req: 요청 / out: 출력 줄 목록
-def show_insp(req, out):
-    store, ftcli, tp = flowtree(req)
-    # 그래프 · id → 노드 · 지금 초
-    tree = store.read_json(tp, {}) or {}
-    nodes = store.node_map(tree)
-    now = time.time()
-    # 검증 노드 id 목록
-    ver = [x["id"] for x in req.get("nodes") or [] if nodes.get(x["id"], {}).get("kind") == "verify"]
-    if not ver:
-        out.append("검증 노드 없음 — 할 일 없음")
-        return
-    for v in ver:
-        out.extend(ftcli.show_lines(tree, v, now))
-    out.append("할 일: 검증 노드마다 python3 devview/flowtree/flowtree.py --role insp verify-start <id> → 복제 서브에게 검증을 시킨다 → "
-               "재현 스크립트를 한 번 다시 돌려 확인 → run <id> pass|fail '근거(커밋 · 시험 명령)' · 섹션 검증이 끝나면 hub.py log 한 줄")
-    set_status(f"확인 : 검증 {' · '.join(ver)[:60]}")
 
 
 # 2nd — 질문 · 대상 · 답 자리
@@ -222,10 +216,44 @@ def show_2nd(req, out, rid):
         out.append(f"자리: {t.get('ctx') or '-'}")
         if t.get("block"):
             out.append(f"블록 {t['block']} — 책 폴더 content/ 의 그 칸 · contracts/*.json 의 같은 id 를 읽는다(bookkit/README «판 · 블록 ID»)")
-        out.append(f"답 자리: note → {cmd} answer-note {rid} '답(근거 칸 · 계약 id)'")
+        if t.get("thread"):
+            # 꼬리 질문 — 맥락(원 질문 · 원 답 · 앞 꼬리) 뒤 답 자리 = 그 꼬리
+            out.append(f"원 질문: {t.get('orig_q') or '-'}")
+            out.append(f"원 답: {short(t.get('orig_a'), SHOW_TEXT)}")
+            for x in t.get("prev") or []:
+                out.append(f"꼬리 {x.get('id')}: {x.get('q')}\n  답: {short(x.get('a'), 300) or '(답 없음)'}")
+            out.append(f"꼬리 질문 {t['thread']}: {req.get('question')}")
+            out.append(f"답 자리: note 꼬리 {t['thread']} → {cmd} answer-note {rid} '답(근거 칸 · 계약 id)'")
+        else:
+            out.append(f"답 자리: note → {cmd} answer-note {rid} '답(근거 칸 · 계약 id)' --title '짧은 제목(20자 안팎 · 책 아래 질문 줄 행 이름)'")
     else:
         raise MagicError(f"답 자리 모름: {kind}")
     set_status(f"답변 : {short(req.get('question'), 50)}")
+
+
+# 설문 제출 — MAIN = 확정 문항(결정 문서 반영 · 커밋 → 작업) · 2ND = 질문 문항(설명 폼으로 답 → MAIN 에 알림)
+# req: 요청 / out: 출력 줄 목록 / rid: 요청 id
+def show_survey(req, out, rid):
+    # 대상 · 문항 · 결과 전체 명령
+    t = req.get("target") or {}
+    items = t.get("items") or []
+    sid = t.get("survey")
+    res = f"python3 ~/.codex/skills/survey/survey.py{' --dir ' + t['dir'] if t.get('dir') else ''} result {sid}"
+    out.append(f"설문: ‹{t.get('title')}› {sid} · 프로젝트 {t.get('project') or '-'} · 결과 전체 = {res}")
+    for it in items:
+        out.append(f"  [{it.get('id') or '-'}] {it.get('question')} → {it.get('text') or '-'}")
+    if t.get("extra"):
+        out.append(f"추가 지시: {t['extra']}")
+    if req.get("role") == "main":
+        out.append("할 일: 확정 문항을 결정 문서에 반영(survey 스킬 4절 — 질문 아래 «> > 🚹 답» · «🟢 결정») → 설문 · 결과 파일과 같이 커밋"
+                   " → 반영한 결정대로 작업 시작(작업 → 구현 서브 · 검증 → 검증관 · main 1-7) · 추가 지시가 있으면 따른다")
+        set_status(f"작업 : 설문 {sid} 확정 {len(items)}개 반영")
+        return
+    cmd = "python3 ~/.codex/skills/codex-hub/magic.py"
+    out.append(f"답 자리: form → {cmd} answer-form {rid} '답(문항 id 별 · 근거 파일 · 줄)'")
+    out.append(f"답을 넣은 뒤: python3 ~/.codex/skills/codex-hub/hub.py send --to main '설문 {sid} 질문 답 · 설명 폼 <폼 id>"
+               " — 답을 배경에 넣어 다시 묻는 설문을 만들어 줘'")
+    set_status(f"답변 : 설문 {sid} 질문 {len(items)}개")
 
 
 # show — 요청 내용 · 할 일
@@ -235,10 +263,10 @@ def cmd_show(rid):
     # 출력 줄
     out = [f"요청 {rid} · {req.get('skill')} · 보기 {req.get('view') or '-'} · {req.get('at')}"]
     role = req.get("role")
-    if role == "main":
+    if (req.get("target") or {}).get("kind") == "survey" and role in ("main", "2nd"):
+        show_survey(req, out, rid)
+    elif role == "main":
         show_main(req, out)
-    elif role == "insp":
-        show_insp(req, out)
     elif role == "2nd":
         show_2nd(req, out, rid)
     else:
@@ -466,6 +494,9 @@ def answer_form(req, ans, rid):
     # 대상
     t = req.get("target") or {}
     src = " · ".join(x for x in (str(t.get("file") or ""), short(t.get("text"), 80) if str(t.get("text") or "").strip() else "") if x)
+    if t.get("kind") == "survey":
+        # 설문 질문 문항 — 대상 = 설문 · 문항 id
+        src = f"설문 {t.get('survey')} · 문항 " + " · ".join(str(x.get("id") or "-") for x in t.get("items") or [])
     spec = {"title": f"🤖 2ND 답 — {short(req.get('question'), 40)}", "intro": f"대상: {src or '-'} · 요청 {rid}",
             "items": [{"id": "1", "title": short(req.get("question"), 200), "body": ans, "source": src}]}
     # 질문 파일(임시)
@@ -489,9 +520,9 @@ def answer_form(req, ans, rid):
 
 
 # ======= answer-note =======
-# 책 스티커 answer 칸 — bookkit/notes.py answer 재사용(책은 다시 읽을 때 초록 답 칸) · 반환 notes.py 출력 한 줄
-# req: 요청 / ans: 답
-def answer_note(req, ans):
+# 책 스티커 answer 칸 — bookkit/notes.py answer 재사용(답이 달리면 책 아래 질문 줄 행) · 꼬리 질문이면 그 꼬리의 답 · 반환 notes.py 출력 한 줄
+# req: 요청 / ans: 답 / title: 짧은 제목(질문 줄 행 이름 · 없으면 안 바꿈)
+def answer_note(req, ans, title=None):
     # 대상 · 키트 · notes.json 폴더
     t = req.get("target") or {}
     root = Path(req.get("root") or os.getcwd())
@@ -506,7 +537,8 @@ def answer_note(req, ans):
     os.close(fd)
     try:
         Path(tmp).write_text(ans, encoding="utf-8")
-        r = subprocess.run([sys.executable, str(tool), "answer", str(t.get("note")), "--file", tmp, "--book", str(book)],
+        extra = (["--thread", str(t["thread"])] if t.get("thread") else []) + (["--title", title] if title and title.strip() else [])
+        r = subprocess.run([sys.executable, str(tool), "answer", str(t.get("note")), "--file", tmp, "--book", str(book)] + extra,
                            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
     finally:
         try:
@@ -534,6 +566,8 @@ def build_parser():
         p = sub.add_parser(name)
         p.add_argument("rid")
         p.add_argument("answer")
+        if name == "answer-note":
+            p.add_argument("--title", help="짧은 제목(책 아래 질문 줄 행 이름 · 원 질문 답에)")
     return ap
 
 
@@ -548,6 +582,9 @@ def run(a):
     # 답 자리 종류
     kind = (req.get("target") or {}).get("kind")
     want = a.cmd.split("-", 1)[1]
+    # 설문 질문 문항의 답 자리 = 설명 폼(answer-form)
+    if kind == "survey":
+        kind = "form"
     if kind != want:
         raise MagicError(f"이 요청의 답 자리는 {kind} — answer-{kind} 로")
     if a.cmd == "answer-node":
@@ -562,7 +599,7 @@ def run(a):
         p, line = answer_code(req, a.answer)
         return f"답 넣음: {req['target'].get('file') or p}:{line}"
     if a.cmd == "answer-note":
-        return answer_note(req, a.answer)
+        return answer_note(req, a.answer, a.title)
     sid = answer_form(req, a.answer, a.rid)
     return f"설명 폼 등록: {sid} — devview 설문 탭(Alt+S)"
 
