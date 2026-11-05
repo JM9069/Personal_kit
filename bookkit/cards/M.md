@@ -27,7 +27,7 @@
    - FAIL = 쪽보다 큰 블록 · 가로 넘침 → 그 칸 글을 줄이거나 표를 나눈다(구조는 그대로 · 크기 기준 RULES.md 6절)
    - SKIP(브라우저 없음)은 PASS 가 아니다 — 보고에 «검사 SKIP» 이라고 적는다
 4. 지도 마무리: `$ontology` 1-9(A1 · A2 · A3 «이어서 지도» 가 끝난 뒤 — 쉬운 말 검사 · 가장 큰 함정 · 지금 상태 · diff 확인 뒤 docs/ONTOLOGY.md 만 커밋)
-5. 보고: 결과 html 전체 경로 · 블록 · 각주 · 빈 칸 0 · 검사 결과 · 비워 둔 칸과 이유 · devview 로 여는 법(페이지 서버 포트 8801 · 주소 `/bookkit/books/<이름>/dist/<이름>.html`)
+5. 보고: 결과 html 전체 경로 · 블록 · 각주 · 빈 칸 0 · 검사 결과 · 비워 둔 칸과 이유 · devview 로 여는 법(페이지 서버 포트 9169 · 주소 `/bookkit/books/<이름>/dist/<이름>.html`)
 
 ## 끝 신호
 1차판: `--stage 1 --strict` 종료 코드 0 · 2차판: `--stage 2 --strict` 종료 코드 0 + check_book PASS(또는 SKIP 명시)

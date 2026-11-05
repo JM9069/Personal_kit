@@ -4,7 +4,7 @@
 
 단언 = 관측 결과: «입력창이 뜨나»(#hub .dv-hub-input 보임) · «가짜 codex 가 받은 메시지» · «답이 어느 노드에 저장됐나 · 새 노드 수»
 세계 = test_hub.make_world(임시 작업 폴더 · 가짜 codex · 빈 포트 devview) + 이 시험이 쓰기 통로로 더한 질문 · 설문 노드
-키는 헤드리스 크롬 안의 Playwright 키 입력(OS 키 아님) · 실제 Codex · 8701 · 8702 무관
+키는 헤드리스 크롬 안의 Playwright 키 입력(OS 키 아님) · 실제 Codex · 9069 · 8702 무관
 """
 import json
 import os

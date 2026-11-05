@@ -5,7 +5,7 @@
 #   → ③ 저장소 루트에서 new 로 등록(--open 없이) → ④ wait 를 백그라운드로(출력 없음 = 대기 중)
 #   → ⑤ devview 화면 주소로 제출(유저 클릭 대신) → ⑥ wait 가 제출 직후 결과 json 으로 끝나는가 · 걸린 시간
 #   → ⑦ devview 목록에서 완료로 바뀌었나 → 정리(devview 는 PID 로만 종료)
-# 실제 ~/workspace · 8701 · 설문 목록 파일은 건드리지 않는다(임시 폴더 · 빈 포트 · 임시 목록 파일)
+# 실제 ~/workspace · 9069 · 설문 목록 파일은 건드리지 않는다(임시 폴더 · 빈 포트 · 임시 목록 파일)
 from __future__ import annotations
 
 import json

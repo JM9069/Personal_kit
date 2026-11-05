@@ -3,7 +3,7 @@ r"""책 스티커 꼬리 질문 API 시험(브라우저 없음) — 페이지 �
 
     py -3 devview/tests/test_note_thread.py          → PASS / FAIL
 
-- 임시 작업 폴더(시험 notes.json · .codex-hub 2ND 등록) · 가짜 codex(받은 인자를 파일에 적음) · 실제 ~/.codex · 8701 무관
+- 임시 작업 폴더(시험 notes.json · .codex-hub 2ND 등록) · 가짜 codex(받은 인자를 파일에 적음) · 실제 ~/.codex · 9069 무관
 - 키트(같은 폴더 위에 bookkit/notes.py · .agents/skills/codex-hub/magic.py 가 있으면)는 notes.py answer --thread · magic.py show · answer-note 까지,
   없으면(로컬 devview) 답은 notes.json 을 직접 고쳐 흉내 낸다
 - devview 는 빈 포트(페이지 서버 = +100)에 띄우고 끝나면 그 프로세스만 끈다

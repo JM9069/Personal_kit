@@ -4,7 +4,7 @@ r"""책 스티커 마법봉 시험(헤드리스) — 스티커 접수 → 🪄 �
 
     py -3 devview/tests/test_note_magic.py           → PASS / FAIL (playwright 없으면 SKIP)
 
-- 임시 작업 폴더(시험 책 · bookkit/notes.py 복사 · .codex-hub 등록) · 가짜 codex(인자를 파일에 적음) · 실제 ~/.codex · 8701 무관
+- 임시 작업 폴더(시험 책 · bookkit/notes.py 복사 · .codex-hub 등록) · 가짜 codex(인자를 파일에 적음) · 실제 ~/.codex · 9069 무관
 - devview 는 빈 포트(페이지 서버 = +100)에 띄우고 끝나면 그 프로세스만 끈다 · 캡처 = tests/shots/note_magic*.png
 """
 import json

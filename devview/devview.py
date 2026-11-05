@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """devview — 작업 폴더의 코드 · md · git 이력을 브라우저에서 보고 고치는 서버. 표준 라이브러리만 사용
 
-    python3 devview.py [작업 폴더=현재 폴더] [--host 0.0.0.0] [--port 8701] [--log 로그 경로]
+    python3 devview.py [작업 폴더=현재 폴더] [--host 0.0.0.0] [--port 9069] [--log 로그 경로]
 
 화면(static/)
 - 코드 탭: 파일 트리 · Monaco 편집기(PyCharm Dark 색 · 키맵) · md 는 mdview 라이브 프리뷰 편집기
@@ -1958,7 +1958,7 @@ def note_magic_api(p, nid, tid=None, instruction=""):
     return 200, {"ok": True, "rid": res.get("id")}
 
 
-# 페이지 경로 — «/pg/<경로>»(앞에 프록시 접두어 /proxy/8701 · /absproxy/8701 이 붙어도)
+# 페이지 경로 — «/pg/<경로>»(앞에 프록시 접두어 /proxy/9069 · /absproxy/9069 이 붙어도)
 PG_RE = re.compile(r"^(?:/(?:abs)?proxy/\d+)?/pg(/.*)$")
 
 
@@ -1981,7 +1981,7 @@ class PageHandler(Handler):
     def dispatch(self, method):
         u = urlparse(self.path)
         path = unquote(u.path)
-        # 프록시 접두어(/absproxy/8801/)가 붙어 와도 그 뒤만
+        # 프록시 접두어(/absproxy/9169/)가 붙어 와도 그 뒤만
         m = re.match(r"^/(?:abs)?proxy/\d+(/.*)?$", path)
         prefix = ""
         if m:
@@ -2080,7 +2080,7 @@ def main():
     ap = argparse.ArgumentParser(description="devview — 코드 · md · git 이력 보기/편집 서버")
     ap.add_argument("root", nargs="?", default=".", help="작업 폴더 (기본: 현재 폴더)")
     ap.add_argument("--host", default="0.0.0.0", help="묶을 주소 (기본 0.0.0.0 — 대회 미리보기 조건)")
-    ap.add_argument("--port", type=int, default=8701)
+    ap.add_argument("--port", type=int, default=9069)
     ap.add_argument("--page-port", type=int, default=None,
                     help="페이지 서버 포트 — md 의 .html 링크를 여기서 연다 (기본 --port + 100 · 0 = 끔)")
     ap.add_argument("--log", default=None, help="로그 파일 (기본 ~/.devview/devview.log)")

@@ -5,7 +5,7 @@
 test_wand_modes 는 선택을 가짜 알림으로 · 메모를 쓰기 통로로 넣어서 «저장 전 전송» 같은 결함을 못 잡았다(2026-11-05 독립 검증).
 여기서는 선택 = 그래프 iframe 노드 클릭(Ctrl+클릭 여럿) · 메모 · 제목 = 패널 입력 칸에 keyboard.type · 키 = 그 칸에 포커스가 있는 채 Alt+…
 단언 = 가짜 codex 가 받은 글 · 요청 파일 · tree.json(메모 · 답 · 노드 수) · notes.json(magic_rid · 꼬리) · 화면 알림 · 입력창
-세계 = test_hub.make_world(임시 작업 폴더 · 가짜 codex · 빈 포트 devview) · 키는 헤드리스 크롬 안 키(OS 키 아님) · 실제 Codex · 8701 무관
+세계 = test_hub.make_world(임시 작업 폴더 · 가짜 codex · 빈 포트 devview) · 키는 헤드리스 크롬 안 키(OS 키 아님) · 실제 Codex · 9069 무관
 """
 import json
 import os

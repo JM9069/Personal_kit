@@ -6,13 +6,13 @@
 ## 켜기 · 끄기
 
 - 연습 IDE(probe_ide) 터미널에서
-  - bash <키트 폴더>/devview/dv        (키트(AGENTS.md · docs 가 있는 곳)를 포트 8701 로 · 키트가 /home/user/kit 이면 bash /home/user/kit/devview/dv)
-  - 미리보기 칸 PORT 에 8701 → 원형 화살표
+  - bash <키트 폴더>/devview/dv        (키트(AGENTS.md · docs 가 있는 곳)를 포트 9069 로 · 키트가 /home/user/kit 이면 bash /home/user/kit/devview/dv)
+  - 미리보기 칸 PORT 에 9069 → 원형 화살표
   - 끄기: bash …/dv stop · 상태: bash …/dv status · 다른 포트: bash …/dv 8702
-  - md 의 .html 링크(표 밖은 Ctrl+클릭 · 표 안은 클릭) · Book 탭의 책 → devview 와 같은 주소의 `/pg/<경로>` 에서(새 탭 · 주소도 복사) — 대회 브라우저는 다른 주소(포트) 이동이 막혀 페이지 서버(포트 + 100 · 기본 8801)는 흰 화면이었다(2026-11-05) · 페이지 서버는 예전 주소 호환으로만 남음(끄기 --page-port 0)
+  - md 의 .html 링크(표 밖은 Ctrl+클릭 · 표 안은 클릭) · Book 탭의 책 → devview 와 같은 주소의 `/pg/<경로>` 에서(새 탭 · 주소도 복사) — 대회 브라우저는 다른 주소(포트) 이동이 막혀 페이지 서버(포트 + 100 · 기본 9169)는 흰 화면이었다(2026-11-05) · 페이지 서버는 예전 주소 호환으로만 남음(끄기 --page-port 0)
   - md 의 다른 링크(같은 누름) → 옆 칸에 열기(칸이 하나면 오른쪽을 펼치고 나뉘어 있으면 그 칸을 다시 씀 · md 는 그대로) · 자리 = `#제목` · `#L12`(줄) · CSV `#row=12&col=3`(row = 표 # 칸 · col = 열 번호나 열 이름 · 표로 보기로 바꿔 표시) · PDF `#page=3`
 - 대회(키트를 ~/kit 에 clone 했다면): bash ~/kit/devview/dv
-- 직접: python3 devview.py <작업 폴더> [--host 0.0.0.0] [--port 8701]
+- 직접: python3 devview.py <작업 폴더> [--host 0.0.0.0] [--port 9069]
   - 0.0.0.0 에 묶어야 대회 미리보기가 열린다(응시 가이드 5장)
   - 서버 기록: ~/.devview/devview.log (작업 폴더 밖 — 제출물에 안 섞임)
 

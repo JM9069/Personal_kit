@@ -610,7 +610,7 @@ function mdImageSrc(doc, url) {
 
 // ======= .html 링크 → devview 와 같은 주소의 /pg/ 아래에서 새 탭으로 =======
 // 대회 브라우저는 다른 주소(포트를 바꾼 «포트-샌드박스.e2b.app») 이동이 막혀 페이지 서버(포트 +100)는 흰 화면이었다(2026-11-05)
-// 프록시 접두어(/proxy/8701/ · /absproxy/8701/) 아래에서 열었으면 그 접두어를 붙인다
+// 프록시 접두어(/proxy/9069/ · /absproxy/9069/) 아래에서 열었으면 그 접두어를 붙인다
 export function pageUrl(path, loc = location) {
   const enc = path.split('/').map(encodeURIComponent).join('/');
   const px = /^(.*\/(?:abs)?proxy\/\d+)\//.exec(loc.pathname);

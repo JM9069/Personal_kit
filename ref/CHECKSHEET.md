@@ -366,7 +366,7 @@
 > - **키트 설치 순서**: 과제 폴더에서 curl -sL tonto0475.github.io/k | bash → kit/ 에 풀리고 스킬은 ~/.codex/skills 로 복사(대회 파일 무변경 · 키트 = 작업 폴더라 옮기지 않는다) → 새 터미널 탭에서 codex → $ready-start(준비 전용 세션 · 맨 먼저 kit/ReadyStart.md 를 씀) → 그 파일의 0 ~ 2번 줄을 새 탭마다 붙여 넣어 devview · MAIN · 2ND 를 키트에서 띄움(준비는 ready-start 가 계속 · 두 세션은 기다리지 않음)
 > - 🔴 kit/AGENTS.md 는 키트에서 띄운 세션(-C <키트>)에만 실린다 — 루트에서 뜬 처음 세션($ready-start 준비 세션)엔 안 실리는 게 정상
 > - 검증 서브: 같은 모델 · 강도 high · 새 맥락 — MAIN 이 서브를 만들 때 지정(세션을 따로 띄우지 않는다)
-> - 결정 문서의 상자 색(빨강 · 주황 · 초록)은 devview(Browser 도구 PORT 8701)로 본다 — 기본 미리보기는 색 없이 제목 끝 점만 · 설문도 devview 위쪽 «설문» 탭(Ctrl+Alt+2)
+> - 결정 문서의 상자 색(빨강 · 주황 · 초록)은 devview(Browser 도구 PORT 9069)로 본다 — 기본 미리보기는 색 없이 제목 끝 점만 · 설문도 devview 위쪽 «설문» 탭(Ctrl+Alt+2)
 > - 네트워크 기본 꺼짐 → pip install 은 승인 창이 뜬다 · .agents · .git 폴더는 Codex 가 못 씀
 
 ---

@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """precheck — 사전 체험 왕복 점검: 시험 재료 준비 · 자동 판정 · precheck.md 쓰기(표준 라이브러리 + 키트 도구)
 
-  python3 precheck.py prepare [--kit 키트] [--root 루트] [--py 파이썬] [--port 8701]   run 시작 · ReadyStart.md · 시험 재료 · 시작 명령
+  python3 precheck.py prepare [--kit 키트] [--root 루트] [--py 파이썬] [--port 9069]   run 시작 · ReadyStart.md · 시험 재료 · 시작 명령
   python3 precheck.py ping                     MAIN 에 codex queue 한 번(유저 터미널 탭에서)
   python3 precheck.py sub-worktree             검증 서브가 자기 샌드박스에서 — worktree + xdist 실측
   python3 precheck.py sub-skill '제목 줄'       서브가 insp SKILL.md 에서 읽은 첫 «## » 줄을 대조
@@ -103,7 +103,7 @@ ITEMS = [
     ("U17", "유저 · 자세히 · 함수 표", False, (), "` 로 자세히 · 행 추가 · 칸 고침 저장"),
     ("U18", "유저 · 그래프 설문 노드", False, (), "선택 · 해제 · 메모 · 보류"),
     ("U19", "유저 · 책 다른 방식으로 열기", False, (), "책 · 스티커 · 🪄 · 쪽 넘김"),
-    ("U24", "유저 · 책 PORT 8801 맨 위", False, (), "최근 책이 바로 뜸 · 쪽 넘김 · 스티커 · 🪄"),
+    ("U24", "유저 · 책 PORT 9169 맨 위", False, (), "최근 책이 바로 뜸 · 쪽 넘김 · 스티커 · 🪄"),
     ("U20", "유저 · 질문 노드 Alt+W", False, (), "입력창 없이 전송 · 답이 그 노드 안"),
     ("U21", "유저 · 설문 노드 Alt+Q · Alt+W", False, (), "Q = MAIN 이 답으로 받음 · W = 메모가 질문 · 답이 설문 노드 안"),
     ("U22", "유저 · 종 알림 색", False, (), "질문 노랑 · 작업 초록 · 검증 보라 · 설문 핑크 · 북키트 파랑 · 나머지 회색"),
@@ -998,7 +998,7 @@ def j_xd(R):
 
 # devview — 끊기면(샌드박스일 수 있음) 앞선 관측을 쓴다
 def j_d1(R):
-    port = R.st.get("port", 8701)
+    port = R.st.get("port", 9069)
     info = get_json(f"http://127.0.0.1:{port}/api/info")
     if info is None:
         old = R.st.get("d1")
@@ -1018,7 +1018,7 @@ def j_d1(R):
 
 # 종 — API 까지만(화면은 U6)
 def j_n1(R):
-    data = get_json(f"http://127.0.0.1:{R.st.get('port', 8701)}/api/notify")
+    data = get_json(f"http://127.0.0.1:{R.st.get('port', 9069)}/api/notify")
     if data is None:
         old = R.st.get("n1")
         return res(*old) if old else res(UNSURE, "API 응답 없음", "", "유저 터미널 탭에서 check")
@@ -1385,7 +1385,7 @@ def build_parser():
     p = sub.add_parser("prepare", help="run 시작 · 재료 준비")
     p.add_argument("--root", default=None, help="과제 루트")
     p.add_argument("--py", default=None, help="검증에 쓸 파이썬")
-    p.add_argument("--port", type=int, default=8701, help="devview 포트")
+    p.add_argument("--port", type=int, default=9069, help="devview 포트")
     sub.add_parser("ping", help="MAIN 에 codex queue 한 번")
     sub.add_parser("sub-worktree", help="worktree + xdist(서브에서)")
     sub.add_parser("sub-env", help="envcheck(서브에서 · 샌드박스 밖)")

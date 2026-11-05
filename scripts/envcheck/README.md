@@ -53,7 +53,7 @@
 | B4 | which bwrap · unshare -U true | BWRAP → 샌드박스 도구 없음 · 사용자 이름공간 막힘(Codex 쪽에서 나면 정상일 수 있음) |
 | B5 | CODEX_HOME(~/.codex) 의 session_index.jsonl · sessions | NOIDX(정보) → Codex 를 아직 안 띄움 / NOREAD → 읽기 막힘, whoami · hand-on 이 못 씀 |
 | C1 | 0.0.0.0 빈 포트에 표준 서버 → 127.0.0.1 접속 | PORT · BIND → 서버를 못 띄움(Codex 쪽이면 권한 상승으로 띄움) |
-| C2 | 8600 · 8701 바인드 | BUSY → 다른 프로그램이 씀 / «우리 devview 가 이미 떠 있음»(정보) |
+| C2 | 8600 · 9069 바인드 | BUSY → 다른 프로그램이 씀 / «우리 devview 가 이미 떠 있음»(정보) |
 | C3 | chromium · google-chrome | 정보 — 있으면 Codex 가 헤드리스로 앱 화면을 찍을 수 있음 |
 | C4 | devview 를 임시 폴더로 띄워 / 와 /sv/api/state 응답 | DV → devview 가 안 뜨거나 설문 탭 없음, 로그의 devview 출력 확인 |
 | C5 | which tmux | NOTMUX(정보) |
@@ -92,7 +92,7 @@ envcheck 를 두 번 돌린 뒤, Codex 입력창에 한 줄씩:
 
 1. «scripts/envcheck/README.md 를 읽고 envcheck.sh --no-install 을 돌린 뒤, 내 터미널 결과(요약: …)와 비교해 샌드박스가 막는 항목을 한 줄로 정리해 줘»
 2. «python3 -m http.server 8000 --bind 0.0.0.0 을 백그라운드로 띄워 줘» → Browser 도구 PORT 8000 이 열리나 · 승인 창이 어떻게 뜨나 · 안 열리면 «권한 상승으로 다시» 를 시켜 비교
-3. «$survey 의 시험 절대로 해 줘. devview 가 안 떠 있으면 권한 상승으로 8701 에 띄워. 나는 Browser 도구 PORT 8701 → 설문 탭(Ctrl+Alt+2)에서 제출만 하고 채팅은 안 보낼게» → 제출 직후 Codex 가 결과를 보고하나(턴 안 대기) · devview 가 Browser 도구로 보이나(5-1 C)도 같이 확인
+3. «$survey 의 시험 절대로 해 줘. devview 가 안 떠 있으면 권한 상승으로 9069 에 띄워. 나는 Browser 도구 PORT 9069 → 설문 탭(Ctrl+Alt+2)에서 제출만 하고 채팅은 안 보낼게» → 제출 직후 Codex 가 결과를 보고하나(턴 안 대기) · devview 가 Browser 도구로 보이나(5-1 C)도 같이 확인
 4. «계획 모드에서 선택지로 물어봐» → 선택지 질문이 뜨나
 5. «이 세션 이름을 MAIN 으로 바꾸는 방법을 알려 주고, 바꾼 뒤 $ready-start 8절의 whoami.py mark → (다음 명령) find 를 해 줘» → 이름 · UUID 가 맞게 나오나 · 대회 Codex 에서 세션 이름 바꾸는 법(MAIN · 2ND 구조와 hand-on 의 전제)
 
@@ -123,7 +123,7 @@ envcheck 를 두 번 돌린 뒤, Codex 입력창에 한 줄씩:
 
 **무엇인가**
 - 작업 폴더를 PyCharm 비슷하게 보고 고치는 웹 화면. 파이썬 표준 라이브러리 서버(devview/devview.py) + 미리 빌드한 화면 파일(devview/static) — pip · npm 설치 없이 돈다
-- 유저는 IDE 의 Browser 도구에 PORT 8701 을 넣어 연다(서버는 0.0.0.0 에 묶어야 보인다)
+- 유저는 IDE 의 Browser 도구에 PORT 9069 을 넣어 연다(서버는 0.0.0.0 에 묶어야 보인다)
 - 화면
 	- 코드 탭: 파일 트리(git 상태 색) · 편집기(PyCharm 색 · 키맵) · md 는 옵시디언식 라이브 미리보기(콜아웃 색 상자 포함) · CSV 표로 보기
 	- Git 탭(Alt+9): 커밋 그래프 · diff · 파일 이력(읽기 전용)
@@ -132,13 +132,13 @@ envcheck 를 두 번 돌린 뒤, Codex 입력창에 한 줄씩:
 - 저장: 코드는 입력이 멈추고 1초 뒤 자동 저장 · 다른 곳(IDE 편집기 · Codex)이 먼저 고친 파일은 덮어쓰지 않고 «외부 변경 충돌» 띠
 
 **켜기 · 끄기**
-- 떠 있나: curl -s http://127.0.0.1:8701/sv/api/state → json 이면 설문 연결된 devview
-- 켜기: bash kit/devview/dv (작업 폴더 = 키트의 부모(과제 루트) · 키트 = kit/ — 문서 단축키 · 그래프 · Book · 허브 기준 · 포트 8701) · 다른 포트: bash kit/devview/dv 8702
+- 떠 있나: curl -s http://127.0.0.1:9069/sv/api/state → json 이면 설문 연결된 devview
+- 켜기: bash kit/devview/dv (작업 폴더 = 키트의 부모(과제 루트) · 키트 = kit/ — 문서 단축키 · 그래프 · Book · 허브 기준 · 포트 9069) · 다른 포트: bash kit/devview/dv 8702
 	- Codex 가 띄울 때는 exec_command 에 권한 상승(require_escalated)을 요청한다 — 샌드박스 안에서 띄우면 Browser 도구가 못 닿을 수 있다
 - 끄기: bash kit/devview/dv stop · 상태: bash kit/devview/dv status · 서버 기록: ~/.devview/devview.log
 
 **체험에서 확인할 것** (유저가 화면으로 보고, Codex 는 결과를 받아 정리)
-1. Browser 도구 PORT 8701 에 화면이 뜨나 — 안 뜨면 샌드박스 안 · 밖 어느 쪽에서 띄웠는지부터
+1. Browser 도구 PORT 9069 에 화면이 뜨나 — 안 뜨면 샌드박스 안 · 밖 어느 쪽에서 띄웠는지부터
 2. md 파일(예: kit/AGENTS.md)을 열면 콜아웃 색 상자 · 표가 보이나
 3. 파일을 하나 고쳐 저장 → IDE 편집기 쪽에 반영되나 · 반대로 IDE 에서 고치면 devview 에 «외부 변경» 이 뜨나
 4. Git 탭에 커밋 그래프가 나오나(과제 저장소 기준)
@@ -149,7 +149,7 @@ envcheck 를 두 번 돌린 뒤, Codex 입력창에 한 줄씩:
 | 증상 | 할 일 |
 |---|---|
 | «화면 파일 없음: …» 로 바로 꺼짐 | devview/static 이 빠짐 — 키트를 다시 받았는지 · kit/devview/static/index.html 이 있는지 |
-| «포트 8701 을 열 수 없음» | 이미 떠 있음(dv status) 또는 다른 프로그램 → bash kit/devview/dv 8702 로 다른 포트 |
+| «포트 9069 을 열 수 없음» | 이미 떠 있음(dv status) 또는 다른 프로그램 → bash kit/devview/dv 8702 로 다른 포트 |
 | 서버는 떴는데 Browser 도구에 안 보임 | 샌드박스 안에서 띄움 → 권한 상승으로 다시 · 127.0.0.1 이 아니라 0.0.0.0 인지(dv 는 기본 0.0.0.0) |
 | 설문 탭이 없음 | survey.py 를 못 찾음 → bash kit/devview/dv 를 저장소 루트에서 · 또는 python3 kit/devview/devview.py <폴더> --survey kit/.agents/skills/survey/survey.py |
 | 화면이 하얗거나 일부만 | 미리보기 새로고침(원형 화살표) → ~/.devview/devview.log 의 오류 줄 |

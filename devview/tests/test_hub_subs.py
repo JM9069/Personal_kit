@@ -5,7 +5,7 @@
 
 서브 rollout 모양은 2026-11-04 WSL Codex 0.163 실측 기록에서 칸 이름을 본떴다 — session_meta.source.subagent.thread_spawn
 · agent_message(Payload 뒤 본문 · 암호화면 빈 본문) · custom_tool_call exec · task_complete · turn_aborted
-실제 ~/.codex · ~/.devview · 8701 무관 · 창을 띄우지 않음(headless=True 고정)
+실제 ~/.codex · ~/.devview · 9069 무관 · 창을 띄우지 않음(headless=True 고정)
 """
 import json
 import os

@@ -4,7 +4,7 @@
     CC_HEADED=1 py -3 tests/test_flowtree_screens.py  창을 띄워 눈으로 보기
 
 단언 대상은 관측 결과: 화면의 노드 · 선 · 단추 크기 · tree.user.json · tree.json · 마법봉 요청 파일 · 가짜 codex 가 받은 인자
-실제 ~/.codex · ~/.devview · 8701 무관
+실제 ~/.codex · ~/.devview · 9069 무관
 """
 import json
 import re

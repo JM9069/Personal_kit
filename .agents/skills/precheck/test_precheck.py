@@ -389,7 +389,7 @@ def api():
 
 def test_devview_tree_mismatch_fails_and_observation_is_kept(world, api):
     run, st = prepare(world, api)
-    Api.info = {"kit_abs": str(world["kit"]), "flowtree": {"tree": st["tree"]}, "page_port": 8801, "root": str(world["root"])}
+    Api.info = {"kit_abs": str(world["kit"]), "flowtree": {"tree": st["tree"]}, "page_port": 9169, "root": str(world["root"])}
     Api.notify = {"items": [{"title": f"N1-{run}"}]}
     rows, _ = table(world)
     assert rows["D1"] == "통과" and rows["N1"] == "통과"
@@ -399,7 +399,7 @@ def test_devview_tree_mismatch_fails_and_observation_is_kept(world, api):
 
 def test_devview_down_is_unsure_and_keeps_earlier(world, api):
     run, st = prepare(world, api)
-    Api.info = {"kit_abs": str(world["kit"]), "flowtree": {"tree": st["tree"]}, "page_port": 8801}
+    Api.info = {"kit_abs": str(world["kit"]), "flowtree": {"tree": st["tree"]}, "page_port": 9169}
     Api.notify = {"items": [{"title": f"N1-{run}"}]}
     assert table(world)[0]["D1"] == "통과"
     sp = world["kit"] / ".codex-hub" / "precheck" / run / "state.json"

@@ -6,7 +6,7 @@
 스크립트 한 줄 → 배지 · 목록 → 누름 = 보기 전환 + 그래프 iframe 이 받은 {ft:'focus'} · 읽음 → 배지 감소
 · tree.json 에 done(store.apply) → 자동 알림 · 시작 때 기존 기록은 알림 없음 · notes.json answer · 꼬리 답 → 책 #note=
 · 새 설문 → 설문 탭 그 설문 · 모두 읽음 · 새로고침 뒤 읽음 유지 · 종 끌기 → 위치 저장 · 창 줄이면 안으로 · 모든 보기에서 종 보임 · 긴 글 줄바꿈
-실제 ~/.codex · ~/.devview · 8701 · 8702 무관(서버의 HOME · USERPROFILE · CODEX_HOME 을 임시 폴더로)
+실제 ~/.codex · ~/.devview · 9069 · 8702 무관(서버의 HOME · USERPROFILE · CODEX_HOME 을 임시 폴더로)
 """
 import json
 import os

@@ -8,7 +8,7 @@
          · 시험용 «_» 책 · _partial · book_example(벤치마크)은 목록에 안 나온다 — 줄 = 판 하나 · 최신이 위 · 그룹 없음
 세계 2(과제 루트 + kit/): README · uploads · kit/AGENTS.md · kit/docs/hand_off.md · kit/bookkit · kit/.codex-hub
 세계 3(책 없음): «만든 책 없음» 한 줄
-실제 ~/.devview · 8701 무관(서버의 HOME · USERPROFILE 을 임시 폴더로)
+실제 ~/.devview · 9069 무관(서버의 HOME · USERPROFILE 을 임시 폴더로)
 """
 import json
 import os

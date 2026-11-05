@@ -372,7 +372,7 @@ def check_c():
         add("C1", "fail", f"BIND {e}")
     # C2 — 쓸 포트가 비었나 · 차 있으면 우리 devview(설문 상태 json 응답)인지 가른다
     busy, ours = [], []
-    for port in (8600, 8701):
+    for port in (8600, 9069):
         s = socket.socket()
         try:
             s.bind(("0.0.0.0", port))

@@ -182,7 +182,7 @@ async function capture() {
 
 // ======= 앱 화면 — 과제 앱 서버(기본 3000)를 devview 안 iframe 으로 =======
 // Browser 도구 칸을 포트마다 바꿔 오가지 않으려고. 주소는 지금 devview 주소에서 포트만 바꿔 만든다
-//   E2B 같은 «포트-샌드박스주소» 이름(8701-xxx.e2b.app) → 3000-xxx.e2b.app · 그 밖(localhost 등) → 호스트:3000
+//   E2B 같은 «포트-샌드박스주소» 이름(9069-xxx.e2b.app) → 3000-xxx.e2b.app · 그 밖(localhost 등) → 호스트:3000
 export function appUrl(port, loc = location) {
   const m = loc.hostname.match(/^(\d+)-(.+)$/);
   return m ? `${loc.protocol}//${port}-${m[2]}/` : `${loc.protocol}//${loc.hostname}:${port}/`;

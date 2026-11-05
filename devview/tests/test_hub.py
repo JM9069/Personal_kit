@@ -7,7 +7,7 @@
 시험 재료: 시험 안에서 만드는 작은 가상 그래프(TREE · 일반 이름) → 작업 폴더/docs/flowtree/tree.json · 작은 app · .codex-hub 등록(main · 2nd + 추가 5)
 rollout 모양은 2026-11-02 WSL Codex 0.163(데몬 0.166) 실측 기록에서 칸 이름을 본떴다 — item_completed UserMessage · phase final_answer
 · turn_attribution.turn_trigger(queue) · <environment_context> · <skill> 주입 · task_complete.error
-실제 ~/.codex · ~/.devview · 8701 무관(서버의 HOME · USERPROFILE · CODEX_HOME 을 임시 폴더로) · queue 는 가짜 codex(인자를 파일에 적음)
+실제 ~/.codex · ~/.devview · 9069 무관(서버의 HOME · USERPROFILE · CODEX_HOME 을 임시 폴더로) · queue 는 가짜 codex(인자를 파일에 적음)
 단언 대상은 관측 결과: HTTP 상태 · 요청 파일 · tree.json 노드 · 가짜 codex 가 받은 인자 · 화면 위치 · 보이는 글자 · 클래스
 """
 import json

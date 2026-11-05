@@ -125,7 +125,7 @@ description: 과제를 받은 직후 한 번 쓰는 «과제 파악» 스킬 —
 ## 6. 보고(지휘)
 
 - 1차판 · 2차판 html 전체 경로 · 빌드 결과(블록 · 각주 · 빈 칸 0 · 경고 0) · check_book(PASS · 쪽 수 / SKIP — SKIP 은 PASS 가 아니다 · bookkit/RULES.md 6절 표를 대 보고 «검사 SKIP») · 비워 둔 칸과 이유 · 지도 확인할 것 번호 목록 · 걸린 시간(카드별)
-- devview 가 떠 있으면 페이지 서버(devview 포트 + 100 · 기본 8801) 주소 /bookkit/books/<이름>/dist/<이름>.html · 안 떠 있으면 유저 터미널에서 칠 한 줄 bash <키트 폴더>/devview/dv
+- devview 가 떠 있으면 페이지 서버(devview 포트 + 100 · 기본 9169) 주소 /bookkit/books/<이름>/dist/<이름>.html · 안 떠 있으면 유저 터미널에서 칠 한 줄 bash <키트 폴더>/devview/dv
 
 ## 7. 시험(키트를 고친 뒤)
 

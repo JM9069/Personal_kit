@@ -70,7 +70,7 @@ LAST_SEEN = [0.0]
 # 목록에 늘 넣을 저장 폴더 — serve --dir · devview 작업 폴더의 docs/surveys
 EXTRA_STORES = []
 # devview 기본 포트
-DEVVIEW_PORT = 8701
+DEVVIEW_PORT = 9069
 # 설문 파일 요약 캐시 — 경로 → (수정 시각, 요약). 화면이 2초마다 목록을 다시 읽어서
 SUMMARY_CACHE = {}
 # 보류 선택지 이름 — 모든 질문에 자동으로 붙음

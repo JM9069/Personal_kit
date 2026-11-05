@@ -3,7 +3,7 @@
 #   python3 -m pytest .agents/skills/survey/test_survey_route.py -q
 #   임시 작업 폴더(.codex-hub 등록 · devview/codex_hub.py 복사본) + 따로 띄운 설문 서버 + 가짜 codex(받은 인자를 파일에 적음)
 #   단언 = 가짜 codex 가 받은 thread · 메시지 · 결과 파일 route 칸 · 설문 화면의 전송 줄
-#   실제 Codex 세션 · 실행 중인 devview(8701 · 8702) 는 건드리지 않는다(빈 포트 · 임시 목록 파일)
+#   실제 Codex 세션 · 실행 중인 devview(9069 · 8702) 는 건드리지 않는다(빈 포트 · 임시 목록 파일)
 from __future__ import annotations
 
 import json

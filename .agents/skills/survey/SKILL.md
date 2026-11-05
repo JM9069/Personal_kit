@@ -23,9 +23,9 @@ description: 유저에게 물을 것 · 보여 줄 것을 세션 밖 화면(devv
 	- 대기 · 완료 = 설문 폼(선택지)만 · **질문 = 설명 폼 전부**(답할 것이 위, 끝난 것은 회색)
 	- 새 설문을 등록하면 열린 devview 의 설문 탭 **안에서** 2초 안에 그 설문이 열린다. devview 는 보던 화면 그대로 두고 알림 «새 설문 — Alt+S» · 배지만 띄운다(저절로 넘어가지 않음 · 열 때도 설문으로 바로 가지 않음)
 	- → 등록한 뒤 유저에게 «설문 탭(Alt+S)에 올렸어» 한 줄로 알린다. 주소는 알려 줄 필요가 없다
-- devview 가 떠 있는지 확인(처음부터 샌드박스 밖 승인 — 안에서는 떠 있어도 접속이 막힌다): curl -s http://127.0.0.1:8701/sv/api/state → seen_ago 가 든 json 이면 설문 연결된 devview(아래 생략)
+- devview 가 떠 있는지 확인(처음부터 샌드박스 밖 승인 — 안에서는 떠 있어도 접속이 막힌다): curl -s http://127.0.0.1:9069/sv/api/state → seen_ago 가 든 json 이면 설문 연결된 devview(아래 생략)
 - 안 떠 있으면 직접 띄우지 않고 유저 터미널 탭에서 칠 명령 한 줄을 준다(역할 스킬 공통 — Codex 가 띄운 서버는 끊긴 적 있음 · ReadyStart.txt 0번 줄과 같다)
-	- bash <키트 폴더>/devview/dv (작업 폴더 = 키트 — AGENTS.md · docs 가 있는 곳, 없으면 지금 폴더 · 포트 8701) → 유저가 Browser 도구 PORT 8701
+	- bash <키트 폴더>/devview/dv (작업 폴더 = 키트 — AGENTS.md · docs 가 있는 곳, 없으면 지금 폴더 · 포트 9069) → 유저가 Browser 도구 PORT 9069
 	- 이유: 리눅스 샌드박스(bwrap)는 네트워크를 따로 떼어 내고 로컬 연결도 기본으로 막는다 → 샌드박스 안에서 띄우면 Browser 도구가 서버에 못 닿을 수 있다. 등록(new) · 대기(wait)는 파일만 다루므로 샌드박스 안에서 해도 된다
 - devview 를 못 쓰면 설문만 따로: python3 ~/.codex/skills/survey/survey.py serve --port 8600 (같은 화면 · 0.0.0.0) → Browser 도구 PORT 8600
 - «Address already in use» → 이미 떠 있는 것(그대로 쓴다)
