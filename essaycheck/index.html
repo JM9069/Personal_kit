@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>서술형 예상 문제</title>
+<style>
+:root { --bg:#15171c; --panel:#1d2027; --line:#2c313b; --fg:#e4e6eb; --muted:#8b93a1; --acc:#5aa9ff; --ok:#3fbf7f; --bad:#ef5d5d; --warn:#e6b450; }
+* { box-sizing:border-box; }
+body { margin:0; background:var(--bg); color:var(--fg); font:14px/1.6 "Pretendard","Malgun Gothic",system-ui,sans-serif; }
+header { position:sticky; top:0; background:#111318; border-bottom:1px solid var(--line); padding:10px 16px; display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
+header b { font-size:15px; } .muted { color:var(--muted); } .small { font-size:12px; }
+main { max-width:1000px; margin:0 auto; padding:16px; }
+.card { background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:12px 14px; margin-bottom:10px; }
+.warn { border-color:var(--warn); color:var(--warn); }
+.pill { display:inline-block; padding:1px 8px; border-radius:10px; font-size:12px; border:1px solid var(--line); margin-right:6px; }
+.btn { background:var(--acc); color:#06121f; border:0; border-radius:6px; padding:5px 12px; cursor:pointer; font:inherit; font-weight:600; }
+.btn.ghost { background:none; color:var(--acc); border:1px solid var(--acc); }
+textarea { width:100%; min-height:150px; background:#101217; color:var(--fg); border:1px solid var(--line); border-radius:6px; padding:8px; font:inherit; }
+.timer { font:700 26px Consolas,monospace; } .low { color:var(--bad); }
+.row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-top:6px; }
+select { background:#101217; color:var(--fg); border:1px solid var(--line); border-radius:6px; padding:4px 6px; }
+code { font-family:Consolas,monospace; font-size:12px; }
+</style>
+</head>
+<body>
+<header><b>서술형 예상 문제</b><span class="muted small">제출 문서 · 결정 · 코드에서 만든 질문 · 6문항 × 5분 · AI 금지 · 붙여넣기 불가 연습</span>
+  <span style="margin-left:auto" class="row"><select id="cat"><option value="">전체 유형</option></select>
+  <button class="btn ghost" id="reload">다시 읽기</button><button class="btn" id="mock">모의 6문항</button></span></header>
+<main id="view">불러오는 중…</main>
+<script>
+'use strict';
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+let D = null, run = null, timer = null;
+const store = { get(k) { try { return JSON.parse(localStorage.getItem('essay.' + k) || 'null'); } catch (e) { return null; } },
+  set(k, v) { try { localStorage.setItem('essay.' + k, JSON.stringify(v)); } catch (e) { } } };
+
+async function load() {
+  D = await (await fetch('api/questions', { cache: 'no-store' })).json();
+  const cats = [...new Set(D.questions.map(q => q.cat))];
+  const sel = $('#cat'), cur = sel.value;
+  sel.innerHTML = '<option value="">전체 유형</option>' + cats.map(c => `<option ${c === cur ? 'selected' : ''}>${esc(c)}</option>`).join('');
+  render();
+}
+function render() {
+  if (run) return renderRun();
+  const cat = $('#cat').value, qs = D.questions.filter(q => !cat || q.cat === cat);
+  let h = `<div class="card small muted">과제 폴더 <code>${esc(D.root)}</code> · HOW_TO_RUN ${D.docs['HOW_TO_RUN.md'] ? '있음' : '없음'} · AI_COLLABORATION ${D.docs['AI_COLLABORATION.md'] ? '있음' : '없음'} · 질문 ${D.questions.length}개</div>`;
+  h += D.warns.map(w => `<div class="card warn">⚠ ${esc(w)}</div>`).join('');
+  if (D.files.length) h += `<div class="card small">큰 코드 파일(책임 · 흐름 질문 대비): ${D.files.map(f => `<code>${esc(f)}</code>`).join(' · ')}</div>`;
+  h += qs.map(q => { const last = store.get(q.id);
+    return `<div class="card"><div><span class="pill">${esc(q.id)}</span><span class="pill">${esc(q.cat)}</span><span class="small muted">${esc(q.src)}</span></div>` +
+      `<div style="margin:6px 0">${esc(q.q)}</div><div class="row"><button class="btn" data-one="${esc(q.id)}">5분 연습</button>` +
+      (last ? `<span class="small muted">최근 연습 ${esc(last.at)} · ${last.text.length}자</span>` : '') + '</div></div>'; }).join('');
+  $('#view').innerHTML = h;
+}
+function start(list) { run = { list, i: 0, end: Date.now() + 300000, text: '', done: [] }; clearInterval(timer); timer = setInterval(tick, 500); renderRun(); }
+function renderRun() {
+  const q = run.list[run.i];
+  if (!q) { $('#view').innerHTML = '<div class="card"><b>끝</b> — 답한 내용을 돌아보고, 막힌 질문은 해당 파일을 다시 읽으세요.</div>' +
+    run.done.map(d => `<div class="card"><div class="small muted">${esc(d.q.id)} · ${esc(d.q.cat)}</div><div>${esc(d.q.q)}</div><pre style="white-space:pre-wrap">${esc(d.text)}</pre></div>`).join('') +
+    '<button class="btn" id="back">목록으로</button>'; return; }
+  $('#view').innerHTML = `<div class="card"><div class="small muted">문항 ${run.i + 1} / ${run.list.length} · ${esc(q.cat)} · ${esc(q.src)}</div><div style="margin:8px 0;font-size:15px">${esc(q.q)}</div>` +
+    `<div class="row"><span class="timer" id="t">5:00</span><span class="small muted">붙여넣기 막힘 · 시간이 끝나면 자동 다음</span></div>` +
+    `<textarea id="ans" placeholder="내 말로 직접 — 파일 · 함수 이름, 실제로 한 일 · 확인한 결과를 넣으면 좋다"></textarea>` +
+    `<div class="row"><button class="btn" id="next">${run.i + 1 < run.list.length ? '답안 제출하고 다음' : '답안 제출하고 마치기'}</button><button class="btn ghost" id="stop">그만</button></div></div>`;
+  $('#ans').value = run.text; $('#ans').focus();
+}
+function tick() {
+  if (!run || !run.list[run.i]) return;
+  const left = run.end - Date.now(), el = $('#t');
+  if (el) { el.textContent = Math.max(0, Math.floor(left / 60000)) + ':' + String(Math.max(0, Math.floor(left / 1000) % 60)).padStart(2, '0'); el.classList.toggle('low', left < 60000); }
+  if (left <= 0) next();
+}
+function next() {
+  const q = run.list[run.i], text = ($('#ans') || {}).value || '';
+  const d = new Date(), p = n => String(n).padStart(2, '0');
+  store.set(q.id, { at: `${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`, text });
+  run.done.push({ q, text }); run.i++; run.text = ''; run.end = Date.now() + 300000; renderRun();
+}
+document.addEventListener('input', e => { if (run && e.target.id === 'ans') run.text = e.target.value; });
+document.addEventListener('paste', e => { if (run && e.target.id === 'ans') e.preventDefault(); });
+document.addEventListener('click', e => {
+  const t = e.target;
+  if (t.dataset.one) start([D.questions.find(q => q.id === t.dataset.one)]);
+  else if (t.id === 'next') next();
+  else if (t.id === 'stop' || t.id === 'back') { run = null; clearInterval(timer); render(); }
+  else if (t.id === 'reload') load();
+  else if (t.id === 'mock') {
+    // 모의 6문항: 제출 문서에서 나온 질문을 먼저, 모자라면 후기 유형에서 — 시험처럼 섞는다
+    const doc = D.questions.filter(q => q.src !== '단톡방 후기 유형'), bank = D.questions.filter(q => q.src === '단톡방 후기 유형');
+    const pick = (arr, n) => arr.slice().sort(() => Math.random() - 0.5).slice(0, n);
+    const list = pick(doc, Math.min(4, doc.length)); start(list.concat(pick(bank, 6 - list.length)));
+  }
+});
+$('#cat').addEventListener('change', render);
+load();
+</script>
+</body>
+</html>
