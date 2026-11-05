@@ -18,6 +18,10 @@ const KINDS = { done: '완료', block: '이상', hold: '보류', pass: '정상',
   magic: '마법봉', 'queue-fail': '큐 전달 실패', report: '서브 보고', book: '책 새 판', info: '알림' };
 // 출처 → 이름
 const SRC = { script: '스크립트', tree: '그래프', notes: '책', survey: '설문', hub: '허브' };
+// 그래프 노드 종류(notify.py 자동 수집의 node 칸) → 색 이름 — 색 값은 app.css .dv-notify-item.c-*(flowtree meta.js 노드 색과 같게)
+const NODE_TONE = { task: 'task', verify: 'verify', question: 'question', survey: 'survey' };
+// 북키트(책 · 스티커 답 · 책 새 판) 종류
+const BOOK_KINDS = new Set(['note', 'book']);
 const POLL_MS = 2000;
 
 let deps = {};
@@ -92,12 +96,21 @@ function paint() {
   el.list.innerHTML = data.items.length ? data.items.map(row).join('') : '<div class="dv-notify-none">알림 없음</div>';
 }
 
+// 색 이름 — 그래프 자동 수집(src tree + node) = 노드 종류 색 · 설문 도구 = 설문 · 북키트 = book · 나머지(스크립트 등록 · 허브 · node 없는 옛 기록) = 회색
+// r: 알림
+export function tone(r) {
+  if (r.src === 'tree') return NODE_TONE[r.node] || 'etc';
+  if (r.src === 'survey') return 'survey';
+  if (r.src === 'notes' || BOOK_KINDS.has(r.kind)) return 'book';
+  return 'etc';
+}
+
 // 한 줄
 // r: 알림
 function row(r) {
   const kind = KINDS[r.kind] || r.kind;
   const where = toLabel(r.to || {});
-  return `<button type="button" class="dv-notify-item${r.read ? ' is-read' : ''}${r.level === 'bad' ? ' is-bad' : ''}" role="listitem" data-id="${esc(r.id)}" title="${esc(where)}">`
+  return `<button type="button" class="dv-notify-item c-${tone(r)}${r.read ? ' is-read' : ''}${r.level === 'bad' ? ' is-bad' : ''}" role="listitem" data-id="${esc(r.id)}" title="${esc(where)}">`
     + `<span class="dv-notify-kind k-${esc(r.kind)}">${r.level === 'bad' ? '🔴 ' : ''}${esc(kind)}</span>`
     + `<span class="dv-notify-text"><span class="dv-notify-t">${esc(r.title)}</span>`
     + (r.body ? `<span class="dv-notify-b">${esc(r.body)}</span>` : '')

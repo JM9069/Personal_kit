@@ -39,6 +39,7 @@ import time
 import traceback
 import xml.etree.ElementTree as ET
 import zipfile
+from html import escape
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, quote, unquote, urlparse
@@ -1638,6 +1639,13 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         self.dispatch("POST")
 
+    # 책 스티커(/pg/…/api/notes)만 — 그 밖의 경로는 dispatch 가 405
+    def do_PATCH(self):
+        self.dispatch("PATCH")
+
+    def do_DELETE(self):
+        self.dispatch("DELETE")
+
     def wants_gzip(self):
         return "gzip" in (self.headers.get("Accept-Encoding") or "")
 
@@ -1689,6 +1697,13 @@ class Handler(BaseHTTPRequestHandler):
     def dispatch(self, method):
         u = urlparse(self.path)
         path = u.path
+        # 페이지(/pg/<경로>) — 책 · md 의 .html 을 devview 와 같은 주소(출처)로. 대회 브라우저는 다른 주소(포트) 이동이 막혀
+        # 페이지 서버(포트 +100) iframe 이 흰 화면이 됐다(2026-11-05 사전 체험). /sv/ · /ft/ · /api/ 보다 먼저(경로 안 /api/notes)
+        m = PG_RE.match(path)
+        if m:
+            return PageHandler.serve_page(self, method, unquote(m.group(1)), u)
+        if method not in ("GET", "POST", "HEAD"):
+            return self.json(405, {"error": "허용 안 됨"})
         q = {k: v[-1] for k, v in parse_qs(u.query, keep_blank_values=True).items()}
         try:
             raw_body = b""
@@ -1919,7 +1934,11 @@ def note_magic_api(p, nid, tid=None):
     return 200, {"ok": True, "rid": res.get("id")}
 
 
-# ======= 페이지 서버 — md 의 .html 링크를 devview 와 다른 포트에서 연다 =======
+# 페이지 경로 — «/pg/<경로>»(앞에 프록시 접두어 /proxy/8701 · /absproxy/8701 이 붙어도)
+PG_RE = re.compile(r"^(?:/(?:abs)?proxy/\d+)?/pg(/.*)$")
+
+
+# ======= 페이지 서버 — md 의 .html 링크를 devview 와 다른 포트에서 연다(본 서버 /pg/ 와 같은 내용 · 예전 주소 호환) =======
 # 작업 폴더 파일을 원래 경로 그대로 읽기 전용으로 내준다(HTML 이 옆 그림 · js · css 를 상대 경로로 부르므로)
 # 포트가 다르면 출처가 달라 HTML 안 스크립트가 devview API(저장 등)를 부를 수 없다
 class PageHandler(Handler):
@@ -1938,11 +1957,43 @@ class PageHandler(Handler):
     def dispatch(self, method):
         u = urlparse(self.path)
         path = unquote(u.path)
+        # 프록시 접두어(/absproxy/8801/)가 붙어 와도 그 뒤만
+        m = re.match(r"^/(?:abs)?proxy/\d+(/.*)?$", path)
+        prefix = ""
+        if m:
+            prefix = path[:len(path) - len(m.group(1) or "")].rstrip("/")
+            path = m.group(1) or "/"
+        # 맨 위(/) = 가장 최근 책의 마지막 판을 그 자리에서(주소 이동 없음) — 대회 미리보기 칸은 PORT 숫자만 바꿀 수 있고
+        # 경로는 못 친다(2026-11-05 사전 체험). <base> 로 책 폴더를 가리켜 api/notes · 그림 등 상대 경로가 그 책으로 간다
+        if path == "/" and method in ("GET", "HEAD"):
+            return self.latest_book(prefix)
+        return self.serve_page(method, path, u)
+
+    # 가장 최근 책 내주기 — 책이 여럿이면 화면 아래 왼쪽에 작은 책 목록(같은 서버의 책 주소 링크)
+    # prefix: 프록시 접두어(«/absproxy/8801» 또는 "")
+    def latest_book(self, prefix):
         try:
-            # 프록시 접두어(/absproxy/8801/)가 붙어 와도 그 뒤만
-            m = re.match(r"^/(?:abs)?proxy/\d+(/.*)?$", path)
-            if m:
-                path = m.group(1) or "/"
+            rows = [r for r in api_books({})["books"] if r.get("latest")]
+            if not rows:
+                return self.send_bytes(200, "<!doctype html><meta charset=utf-8><title>책</title><p>만든 책 없음</p>".encode("utf-8"),
+                                       MIME[".html"], {"Cache-Control": "no-store"})
+            path = rows[0]["path"]
+            html = safe("/" + path).read_text(encoding="utf-8")
+            folder = quote(prefix + "/" + path.rsplit("/", 1)[0] + "/")
+            base = f'<base href="{folder}">'
+            html = re.sub(r"<head[^>]*>", lambda h: h.group(0) + base, html, count=1, flags=re.I) if re.search(r"<head[^>]*>", html, re.I) else base + html
+            if len(rows) > 1:
+                links = " · ".join(f'<a href="{quote(prefix + "/" + r["path"])}">{escape(r["book"])}</a>' for r in rows)
+                bar = f'<div style="position:fixed;left:8px;bottom:8px;z-index:99;font:12px sans-serif;background:#fff;border:1px solid #ccc;border-radius:6px;padding:4px 8px">책: {links}</div>'
+                html = re.sub(r"</body>", lambda b: bar + b.group(0), html, count=1, flags=re.I) if re.search(r"</body>", html, re.I) else html + bar
+            return self.send_bytes(200, html.encode("utf-8"), MIME[".html"], {"Cache-Control": "no-store"})
+        except HttpError as e:
+            return self.json(e.status, e.payload)
+
+    # 페이지 내주기(작업 폴더 파일 읽기 전용 + 책 스티커 api/notes) — 본 서버 /pg/ 도 이걸 부른다
+    # method: GET · HEAD · POST · PATCH · DELETE / path: 작업 폴더 기준 «/…» 경로 / u: urlparse 결과(질의 문자열)
+    def serve_page(self, method, path, u):
+        try:
             # 책 스티커 — 책 html 옆 상대 경로 «api/notes»(본문은 json 만 · 다른 출처 폼 전송 막기)
             j = path.find("/api/notes")
             if j >= 0 and path[j + 10:j + 11] in ("", "/"):

@@ -24,7 +24,6 @@ let restoreSplit = null;
 let gitMap = new Map();          // 경로 → 상태 글자(M A U D R ! C)
 let gitRepo = false;
 let branch = '';
-let ports = { port: 0, page: 0 };  // devview 포트 · 페이지 서버 포트(0 = 꺼짐) — .html 링크를 여는 주소 계산용
 let fontSize = clamp(store.get('font', 13), 9, 28);
 let mdFont = clamp(store.get('mdfont', 15), 11, 26);
 let wrap = !!store.get('wrap', false);
@@ -60,7 +59,6 @@ export function initEditor(m, info) {
   monaco = m;
   gitRepo = !!info.git?.repo;
   branch = info.git?.branch || '';
-  ports = { port: info.port || 0, page: info.page_port || 0 };
   // 오른쪽 칸 = 왼쪽 칸 복제(아직 비어 있을 때) — id 를 지워 시험 · 다른 모듈이 보는 #tabs 등은 왼쪽 그대로
   const left = $('#paneL');
   const right = left.cloneNode(true);
@@ -610,23 +608,18 @@ function mdImageSrc(doc, url) {
   try { return rawUrl(relTo(doc.realPath || doc.path, url.split('#')[0])); } catch { return null; }
 }
 
-// ======= .html 링크 → 페이지 서버(devview 와 다른 포트)에서 새 탭으로 =======
-// 대회 미리보기 주소는 «포트-샌드박스.e2b.app» 꼴이라 앞의 포트만 바꾸고, 프록시 접두어(/proxy/8701/)면 그 포트를, 나머지는 :포트 를 바꾼다
+// ======= .html 링크 → devview 와 같은 주소의 /pg/ 아래에서 새 탭으로 =======
+// 대회 브라우저는 다른 주소(포트를 바꾼 «포트-샌드박스.e2b.app») 이동이 막혀 페이지 서버(포트 +100)는 흰 화면이었다(2026-11-05)
+// 프록시 접두어(/proxy/8701/ · /absproxy/8701/) 아래에서 열었으면 그 접두어를 붙인다
 export function pageUrl(path, loc = location) {
   const enc = path.split('/').map(encodeURIComponent).join('/');
-  const sub = new RegExp(`^${ports.port}-`);
-  if (ports.port && sub.test(loc.hostname)) {
-    return `${loc.protocol}//${loc.hostname.replace(sub, ports.page + '-')}${loc.port ? ':' + loc.port : ''}/${enc}`;
-  }
-  const px = new RegExp(`^(.*/(?:abs)?proxy/)${ports.port}/`).exec(loc.pathname);
-  if (ports.port && px) return `${loc.protocol}//${loc.host}${px[1]}${ports.page}/${enc}`;
-  return `${loc.protocol}//${loc.hostname}:${ports.page}/${enc}`;
+  const px = /^(.*\/(?:abs)?proxy\/\d+)\//.exec(loc.pathname);
+  return `${loc.protocol}//${loc.host}${px ? px[1] : ''}/pg/${enc}`;
 }
 
 function openPage(path) {
-  if (!ports.page) { toast('페이지 서버 꺼짐 — 원문으로 엶'); openFile(path); return; }
   const url = pageUrl(path);
-  copyText(url, `포트 ${ports.page} 로 엶 · 주소 복사`);
+  copyText(url, '새 탭으로 엶 · 주소 복사');
   window.open(url, '_blank');
 }
 

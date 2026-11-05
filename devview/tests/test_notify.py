@@ -146,6 +146,13 @@ def test_tree_verify_question_survey_ack(tmp_path):
     new = col.tick()
     assert [(r["kind"], r["to"]["node"]) for r in new] == [("fail", v1), ("pass", v1), ("answer", q1)]
     assert new[0]["level"] == "bad" and new[2]["body"] == "이래서"
+    # 노드 종류(node) — 종 목록 색(notify.js tone)
+    assert [r.get("node") for r in new] == ["verify", "verify", "question"]
+    store.apply(tp, "main", "done", task=t1)
+    assert [(r["kind"], r.get("node")) for r in col.tick()] == [("done", "task")]
+    assert all(r.get("node") for r in notify.Feed(tmp_path).view()["items"])       # 저장 · 화면 목록에도 실림
+    rec = notify.make("fail", "스크립트 등록")                                      # 스크립트 등록 = node 없음(회색)
+    assert "node" not in rec
 
 
 def test_tree_screen_passed(tmp_path):

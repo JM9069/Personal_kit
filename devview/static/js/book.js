@@ -7,19 +7,20 @@ import { api } from './api.js';
 import { $, esc, on, emit, store } from './util.js';
 import { pageUrl } from './editor.js';
 
-// 화면 부품 · 마지막 목록 · 고른 책(작업 폴더 기준 경로) · 페이지 서버 포트
+// 화면 부품 · 마지막 목록 · 고른 책(작업 폴더 기준 경로)
 let el = {};
 let list = { books: [] };
 let cur = null;
-let pagePort = 0;
+// 여는 방식 — 'url' = 같은 주소 /pg/ 로 iframe 이동(기본) · 'doc' = 책 글을 받아 srcdoc 에 넣음(주소 이동이 막힌 브라우저 보험)
+let mode = 'url';
 
 // Book 보기 준비
 // info: 서버 info
 export function initBook(info) {
   const view = $('#bookView');
   if (!view) return;
-  pagePort = info.page_port || 0;
   cur = store.get('book.cur', null);
+  mode = store.get('book.mode', 'url') === 'doc' ? 'doc' : 'url';
   view.innerHTML = `
     <div class="dv-book">
       <aside class="dv-book-side">
@@ -30,6 +31,7 @@ export function initBook(info) {
       </aside>
       <section class="dv-book-main">
         <div class="dv-book-bar"><span class="dv-book-path"></span>
+          <button class="dv-book-open dv-book-mode" type="button" data-act="mode"></button>
           <button class="dv-book-open" type="button" data-act="newtab" title="새 탭으로 열기">새 탭으로 열기</button>
         </div>
         <div class="dv-book-empty" hidden></div>
@@ -37,11 +39,13 @@ export function initBook(info) {
       </section>
     </div>`;
   el = { list: $('.dv-book-list', view), path: $('.dv-book-path', view), frame: $('.dv-book-frame', view),
-    empty: $('.dv-book-empty', view), open: $('.dv-book-open', view), count: $('.dv-book-count', view) };
+    empty: $('.dv-book-empty', view), open: $('.dv-book-open[data-act="newtab"]', view), count: $('.dv-book-count', view),
+    mode: $('.dv-book-mode', view) };
   view.addEventListener('click', (e) => {
     const a = e.target.closest('[data-act]')?.dataset.act;
     if (a === 'reload') load();
     else if (a === 'newtab' && cur) window.open(pageUrl(cur), '_blank');
+    else if (a === 'mode') { mode = mode === 'doc' ? 'url' : 'doc'; store.set('book.mode', mode); el.frame.dataset.url = ''; show(); }
     const b = e.target.closest('[data-book]');
     if (b) pick(b.dataset.book);
   });
@@ -53,7 +57,7 @@ export function initBook(info) {
   // 책 안 Alt+Q · W · B → {book:'key', code} — 다른 출처라 iframe 안 키를 main.js 가 직접 못 받는다
   window.addEventListener('message', (e) => {
     if (e.source !== el.frame.contentWindow || !['toggle-list', 'key'].includes(e.data?.book)) return;
-    try { if (pagePort && +new URL(e.origin).port !== pagePort) return; } catch { return; }
+    if (e.origin !== location.origin) return;   // 책은 같은 주소의 /pg/ 아래(2026-11-05 — 다른 포트는 대회 브라우저에서 막힘)
     if (e.data.book === 'key') { emit('hot-key', String(e.data.code)); return; }
     const hide = !box.classList.contains('no-side');
     box.classList.toggle('no-side', hide);
@@ -88,17 +92,44 @@ function paint() {
     : '<div class="dv-book-none">만든 책 없음 — $ontology 로 1차판을 만들면 여기에</div>';
 }
 
-// 오른쪽 — 고른 책을 페이지 서버 주소로
-function show() {
-  el.empty.hidden = !!cur && !!pagePort;
+// 오른쪽 — 고른 책을 같은 주소 /pg/ 로(또는 글을 받아 srcdoc 으로)
+// hash: «#note=<id>&t=<꼬리>» — 열린 뒤 그 스티커 · 질문 줄로
+function show(hash = '') {
+  el.empty.hidden = !!cur;
   el.frame.hidden = !el.empty.hidden;
-  el.open.disabled = !cur || !pagePort;
-  if (!pagePort) { el.empty.textContent = '페이지 서버 꺼짐(--page-port 0)'; el.path.textContent = ''; return; }
-  if (!cur) { el.empty.textContent = '고른 책 없음'; el.path.textContent = ''; el.frame.removeAttribute('src'); return; }
+  el.open.disabled = !cur;
+  el.mode.textContent = mode === 'doc' ? '주소로 열기' : '다른 방식으로 열기';
+  el.mode.title = mode === 'doc' ? '같은 주소 /pg/ 로 이동해 연다(기본)' : '주소 이동 없이 책 글을 받아 넣는다(책이 흰 화면이면)';
+  if (!cur) { el.empty.textContent = '고른 책 없음'; el.path.textContent = ''; el.frame.removeAttribute('src'); el.frame.removeAttribute('srcdoc'); return; }
   const url = pageUrl(cur);
   el.path.textContent = cur;
   el.path.title = url;
-  if (el.frame.dataset.url !== url) { el.frame.dataset.url = url; el.frame.src = url; }
+  if (mode === 'doc') { if (el.frame.dataset.url !== 'doc:' + url || hash) openDoc(url, hash); return; }
+  if (el.frame.dataset.url !== url || hash) { el.frame.removeAttribute('srcdoc'); el.frame.dataset.url = url; el.frame.src = url + hash; }
+}
+
+// srcdoc 으로 열기 — 책 글을 같은 주소에서 받아 <base>(책 폴더 /pg/…/)를 넣어 api/notes 등 상대 경로가 그대로 가게
+// srcdoc 문서는 주소 꼬리가 없어 #note= 는 열린 뒤 그 문서의 hash 를 바꿔 넘긴다(책 엔진이 hashchange 를 받음)
+// url: 책 /pg/ 주소 / hash: «#note=…» 또는 ''
+async function openDoc(url, hash) {
+  el.frame.dataset.url = 'doc:' + url;
+  let html;
+  try {
+    const r = await fetch(url, { cache: 'no-store' });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    html = await r.text();
+  } catch (e) {
+    el.frame.dataset.url = '';
+    el.empty.hidden = false;
+    el.frame.hidden = true;
+    el.empty.textContent = `책 읽기 실패 — ${e.message || e}`;
+    return;
+  }
+  const base = `<base href="${url.slice(0, url.lastIndexOf('/') + 1)}">`;
+  html = /<head[^>]*>/i.test(html) ? html.replace(/<head[^>]*>/i, (h) => h + base) : base + html;
+  if (hash) el.frame.addEventListener('load', () => { try { el.frame.contentWindow.location.hash = hash; } catch { /* 넘기지 못함 */ } }, { once: true });
+  el.frame.removeAttribute('src');
+  el.frame.srcdoc = html;
 }
 
 // 책 고르기
@@ -116,11 +147,11 @@ function pick(path) {
 export async function bookOpen(t, hash = '') {
   await load();
   const hit = list.books.find((b) => b.book === t.book && b.latest) || list.books.find((b) => b.path === t.path);
-  if (!hit || !pagePort) return false;
-  pick(hit.path);
-  const url = pageUrl(hit.path);
-  el.frame.dataset.url = url;
-  el.frame.src = url + hash;
+  if (!hit) return false;
+  cur = hit.path;
+  store.set('book.cur', cur);
+  paint();
+  show(hash);
   return true;
 }
 

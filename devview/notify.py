@@ -6,7 +6,8 @@
     python3 devview/notify.py list [--unread]
 
 저장: <키트>/.codex-hub/notify.jsonl — 덧붙이기만(잠금 파일 notify.jsonl.lock) · 서버가 꺼져 있어도 쓰기만 하면 다음에 읽음
-  한 줄 = {"op":"add", id, ts, at, kind, level, title, body, to, src[, key]} 또는 {"op":"read", ts, ids:[...]}
+  한 줄 = {"op":"add", id, ts, at, kind, level, title, body, to, src[, key][, node]} 또는 {"op":"read", ts, ids:[...]}
+  node = 그래프 자동 수집의 노드 종류(task · verify · question · survey) — 종 목록 색(notify.js) · 옛 기록엔 없음
   키트 찾기: --kit → 환경변수 DEVVIEW_KIT → 지금 폴더에서 위로 .codex-hub/notify.jsonl 이 있는 곳
              → 지금 폴더/kit(AGENTS.md 있음) → 지금 폴더
 --to: graph:<노드id> · book:<책>[:<스티커id>[:<꼬리id>]](스티커 없으면 그 책 마지막 판) · survey:<설문id> · hub:<닉> · file:<경로>[:<줄>] · view:<보기>
@@ -128,7 +129,8 @@ def short(s, n):
 
 # 알림 한 칸 만들기
 # kind: 종류 / title: 제목 / body: 본문 / to: 이동 대상 dict / src: 출처 / key: 자동 수집 열쇠 / at: 기록 시각 글자
-def make(kind, title, body="", to=None, src="script", key=None, at=None):
+# node: 그래프 노드 종류(자동 수집만)
+def make(kind, title, body="", to=None, src="script", key=None, at=None, node=None):
     kind = str(kind or "info").strip()
     if not re.fullmatch(r"[a-z][a-z0-9-]{0,23}", kind):
         raise NotifyError(f"종류 «{kind}» — 영어 소문자 · 숫자 · - (예: {' · '.join(KINDS)})")
@@ -140,6 +142,8 @@ def make(kind, title, body="", to=None, src="script", key=None, at=None):
            "body": str(body or "").strip()[:BODY_MAX], "to": to or {}, "src": src}
     if key:
         rec["key"] = key
+    if node:
+        rec["node"] = str(node)
     return rec
 
 
@@ -279,22 +283,22 @@ def tree_events(tree):
                 t = e.get("t") if isinstance(e, dict) else None
                 if t in ("done", "block", "hold"):
                     out.append((f"tree:{nid}:ev:{e.get('seq')}:{t}:{e.get('ts')}",
-                                dict(kind=t, title=name, body=e.get("note", ""), to=node_to(n), at=e.get("at"))))
+                                dict(kind=t, title=name, body=e.get("note", ""), to=node_to(n), at=e.get("at"), node=kind)))
         elif kind == "verify":
             for r in n.get("runs") or []:
                 if isinstance(r, dict) and r.get("result") in ("pass", "fail"):
                     out.append((f"tree:{nid}:run:{r.get('seq')}:{r.get('ts')}",
-                                dict(kind=r["result"], title=name, body=r.get("note", ""), to=node_to(n), at=r.get("at"))))
+                                dict(kind=r["result"], title=name, body=r.get("note", ""), to=node_to(n), at=r.get("at"), node=kind)))
         elif kind == "question":
             for a in n.get("answers") or []:
                 if isinstance(a, dict):
                     out.append((f"tree:{nid}:ans:{a.get('seq')}:{a.get('ts')}",
-                                dict(kind="answer", title=name, body=a.get("short", ""), to=node_to(n), at=a.get("at"))))
+                                dict(kind="answer", title=name, body=a.get("short", ""), to=node_to(n), at=a.get("at"), node=kind)))
         elif kind == "survey":
             for a in n.get("acks") or []:
                 if isinstance(a, dict):
                     out.append((f"tree:{nid}:ack:{a.get('seq')}:{a.get('ts')}",
-                                dict(kind="survey-ack", title=name, body=a.get("note", ""), to=node_to(n), at=a.get("at"))))
+                                dict(kind="survey-ack", title=name, body=a.get("note", ""), to=node_to(n), at=a.get("at"), node=kind)))
     return out
 
 
@@ -435,7 +439,7 @@ class Collector:
                     except Exception:
                         pass
                 new.append(make(rec["kind"], rec["title"], rec.get("body", ""), to, src=name.split(":")[0], key=key,
-                                at=rec.get("at")))
+                                at=rec.get("at"), node=rec.get("node")))
         self.n += 1
         if new:
             append(self.kit, new)

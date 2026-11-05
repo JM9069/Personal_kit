@@ -301,8 +301,66 @@ def run(br, root, tp, t1, url):
         page.click("#hub .dv-hub-min")
     else:
         check("⑨ 허브 보임(시험 재료)", False, "허브 없음")
+    colors(page, root)
     check("페이지 예외 없음", not errs, errs[:3])
     page.close()
+
+
+# 종류 색 — 제목 → (src, kind, node, 왼쪽 막대 rgb, 바탕 rgba)
+TONES = {
+    "색-작업": ("tree", "done", "task", "rgb(106, 171, 115)", "rgba(106, 171, 115, 0.14)"),
+    "색-작업이상": ("tree", "block", "task", "rgb(106, 171, 115)", "rgba(106, 171, 115, 0.14)"),
+    "색-검증": ("tree", "pass", "verify", "rgb(176, 125, 232)", "rgba(176, 125, 232, 0.14)"),
+    "색-검증비정상": ("tree", "fail", "verify", "rgb(176, 125, 232)", "rgba(176, 125, 232, 0.14)"),
+    "색-질문": ("tree", "answer", "question", "rgb(244, 211, 94)", "rgba(244, 211, 94, 0.14)"),
+    "색-설문반영": ("tree", "survey-ack", "survey", "rgb(255, 111, 181)", "rgba(255, 111, 181, 0.14)"),
+    "색-새설문": ("survey", "survey", None, "rgb(255, 111, 181)", "rgba(255, 111, 181, 0.14)"),
+    "색-책답": ("notes", "note", None, "rgb(86, 168, 245)", "rgba(86, 168, 245, 0.14)"),
+    "색-책새판": ("script", "book", None, "rgb(86, 168, 245)", "rgba(86, 168, 245, 0.14)"),
+    "색-수동비정상": ("script", "fail", None, "rgb(122, 126, 133)", "rgba(122, 126, 133, 0.14)"),
+    "색-수동답변": ("script", "answer", None, "rgb(122, 126, 133)", "rgba(122, 126, 133, 0.14)"),
+    "색-옛그래프": ("tree", "done", None, "rgb(122, 126, 133)", "rgba(122, 126, 133, 0.14)"),
+    "색-허브": ("hub", "hub", None, "rgb(122, 126, 133)", "rgba(122, 126, 133, 0.14)"),
+}
+# 라이트 흉내 변수(시험 뒤 지움)
+LIGHT_VARS = {"--dv-text": "#1e1f22", "--dv-muted": "#55585e", "--dv-text2": "#3a3d42", "--dv-panel": "#e9eaee", "--dv-line2": "#c9ccd2"}
+# 제목 글자 대비(바탕 = 항목 반투명 색을 패널 바탕 위에 합성) — 4.5 미만 목록
+CONTRAST_JS = """(base) => {
+  const nums = (c) => (c.match(/[0-9.]+/g) || []).map(Number);
+  const lum = (v) => { const l = v.slice(0, 3).map((x) => { x = x / 255; return x <= .03928 ? x / 12.92 : ((x + .055) / 1.055) ** 2.4; }); return .2126 * l[0] + .7152 * l[1] + .0722 * l[2]; };
+  const over = (c) => { const m = nums(c); const a = m.length > 3 ? m[3] : 1; return [0, 1, 2].map((i) => m[i] * a + base[i] * (1 - a)); };
+  return [...document.querySelectorAll('#notifyPanel .dv-notify-item:not(.is-read)')].map((b) => {
+    const fg = lum(nums(getComputedStyle(b.querySelector('.dv-notify-t')).color)), bg = lum(over(getComputedStyle(b).backgroundColor));
+    return [b.querySelector('.dv-notify-t').textContent, +((Math.max(fg, bg) + .05) / (Math.min(fg, bg) + .05)).toFixed(1)]; }).filter((x) => x[1] < 4.5); }"""
+
+
+# ⑩ 종류별 왼쪽 막대 · 바탕 색(getComputedStyle) · 이상 · 비정상 = 종류 색 + 🔴 · 다크 · 라이트 캡처
+def colors(page, root):
+    recs = [tn.notify.make(k, title, src=src, node=node) for title, (src, k, node, _, _) in TONES.items()]
+    tn.notify.append(root, recs)
+    check("⑩ 색 시험 알림 13 → 배지", wait_badge(page, len(recs)), badge(page))
+    page.evaluate("devview.showView('graph')")
+    open_panel(page)
+    got = page.evaluate("""() => Object.fromEntries([...document.querySelectorAll('#notifyPanel .dv-notify-item')].map((b) => {
+      const s = getComputedStyle(b); return [b.querySelector('.dv-notify-t').textContent, [s.borderLeftColor, s.backgroundColor, s.borderLeftWidth,
+      b.querySelector('.dv-notify-kind').textContent.startsWith('🔴')]]; }))""")
+    for title, (_, k, _, bar, bg) in TONES.items():
+        g = got.get(title)
+        check(f"⑩ {title} — 막대 {bar} · 바탕 {bg}", g and g[0] == bar and g[1] == bg and g[2] == "3px", g)
+    bad = {t for t, (_, k, _, _, _) in TONES.items() if k in tn.notify.BAD}
+    check("⑩ 이상 · 비정상 = 🔴 칩 유지(종류 색 그대로)", all(got.get(t, [0, 0, 0, None])[3] == (t in bad) for t in TONES),
+          {t: (got.get(t) or [None] * 4)[3] for t in TONES})
+    low = page.evaluate(CONTRAST_JS, [31, 32, 35])
+    check("⑩ 다크 바탕 제목 대비 4.5 이상", not low, low)
+    page.locator("#notifyPanel").screenshot(path=str(SHOTS / "notify_9_colors_dark.png"))
+    # 라이트 — 밝은 바탕 · 어두운 글자 변수로 바꿔 같은 목록이 읽히는지
+    page.evaluate("(v) => { for (const k in v) document.documentElement.style.setProperty(k, v[k]); document.querySelector('#notifyPanel').style.background = '#ffffff'; }", LIGHT_VARS)
+    low = page.evaluate(CONTRAST_JS, [255, 255, 255])
+    check("⑩ 라이트 바탕 제목 대비 4.5 이상", not low, low)
+    page.locator("#notifyPanel").screenshot(path=str(SHOTS / "notify_9_colors_light.png"))
+    page.evaluate("(v) => { for (const k in v) document.documentElement.style.removeProperty(k); document.querySelector('#notifyPanel').style.background = ''; }", LIGHT_VARS)
+    page.click("#notifyPanel [data-act='all']")
+    wait_badge(page, 0, 4)
 
 
 def main():

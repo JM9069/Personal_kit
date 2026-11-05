@@ -83,24 +83,31 @@ ITEMS = [
     ("E2", "책 재료 — pandas · playwright · 크롬", False, (), "import 둘 · 헤드리스 크롬 실행"),
     ("E3", "파일 노드 file-add", False, (), "키트 AGENTS.md 파일 노드 생성"),
     ("E4", "세션끼리 글(hub send)", False, ("H1", "H2"), "2ND 입력에 @main · 표식 · ACK-E4"),
+    ("E5", "책 실제 빌드(양식 · 그 기계 파이썬)", False, (), "new_book · build_book --stage 1 · html 생성"),
     ("U1", "유저 · 외부 Browser 로 devview", True, (), "화면 본문 보임"),
     ("U2", "유저 · 대화 탭에서 MAIN 에 전송", True, (), "대화 탭에 답 보임"),
     ("U3", "유저 · 시험 설문 제출", True, (), "첫 문항 확정 · 둘째 질문"),
-    ("U4", "유저 · 시험 책 스티커 마법봉", True, (), "페이지 서버 화면 · 답 보임"),
+    ("U4", "유저 · 시험 책 스티커 마법봉", True, (), "Book 탭(같은 주소 /pg/) 책 화면 · 답 보임"),
     ("U5", "유저 · 그래프 세 노드 마법봉", True, (), "Ctrl 선택 한 번(안 되면 나눠서 · 사실대로)"),
     ("U6", "유저 · 종 · 답 표식 화면 확인", False, (), "API 와 화면 구분"),
     ("U7", "유저 · CSV 표 · 파일 노드 열기", False, (), "CSV 가 표로 뜸 · 그래프 Main 파일 노드에서 ` 로 열림"),
-    ("U8", "유저 · 단축키", False, (), "Alt+Q/W · Alt+` · 0~8 · Alt+Z/X/C/V 가 Browser 에 안 뺏김"),
+    ("U8", "유저 · 단축키", False, (), "Alt+Q/W · Alt+E/R · Alt+` · 0~8 · Alt+Z/X/C/V 가 Browser 에 안 뺏김"),
     ("U9", "유저 · 서브 패널", False, (), "대화 탭 서브 목록 8개 · 창 끌기"),
     ("U10", "유저 · 터미널 끊김", False, (), "체험 내내 안 끊김 · 끊기면 시각"),
     ("U11", "유저 · 그래프 화면 스위치", False, (), "Main · 섹션0 ~ 8 전환 · 새로고침 뒤 유지"),
-    ("U12", "유저 · Main 에 보이는 것", False, (), "작업 · 파일만 · 검증 · 질문 · 설문 · 빈 틀 없음"),
+    ("U12", "유저 · Main 에 보이는 것", False, (), "작업 · 파일 · 섬 질문 · 검증 · 설문 · 섹션 질문 · 빈 틀 없음"),
     ("U13", "유저 · 섹션 틀", False, (), "빈 노드 28개 · 작업 4 세로 · 왼쪽 설문 2 · 오른쪽 검증 4"),
     ("U14", "유저 · 자유 배치", False, (), "끈 위치 유지 · 화면마다 따로"),
     ("U15", "유저 · 노드 추가 단추", False, (), "네 종류 생성 · Esc 취소"),
     ("U16", "유저 · 줌 단계", False, (), "점 → 카드 → 상세 → 펼침"),
     ("U17", "유저 · 자세히 · 함수 표", False, (), "` 로 자세히 · 행 추가 · 칸 고침 저장"),
     ("U18", "유저 · 그래프 설문 노드", False, (), "선택 · 해제 · 메모 · 보류"),
+    ("U19", "유저 · 책 다른 방식으로 열기", False, (), "책 · 스티커 · 🪄 · 쪽 넘김"),
+    ("U24", "유저 · 책 PORT 8801 맨 위", False, (), "최근 책이 바로 뜸 · 쪽 넘김 · 스티커 · 🪄"),
+    ("U20", "유저 · 질문 노드 Alt+W", False, (), "입력창 없이 전송 · 답이 그 노드 안"),
+    ("U21", "유저 · 설문 노드 Alt+Q · Alt+W", False, (), "Q = MAIN 이 답으로 받음 · W = 메모가 질문 · 답이 설문 노드 안"),
+    ("U22", "유저 · 종 알림 색", False, (), "질문 노랑 · 작업 초록 · 검증 보라 · 설문 핑크 · 북키트 파랑 · 나머지 회색"),
+    ("U23", "유저 · 진행 표시 색", False, (), "진행 중 노랑 회전 · 완료 초록 점멸"),
 ]
 ITEM_IDS = [x[0] for x in ITEMS]
 
@@ -464,7 +471,8 @@ def seed_frames(R):
 # 시험 책 — 예시 책 html 사본 + 미리 붙인 스티커 하나(git 제외 폴더 bookkit/books/)
 def seed_book(R):
     src = R.kit / "bookkit" / "book_example" / "task09" / "task09_kit.html"
-    book = R.kit / "bookkit" / "books" / f"_precheck_{R.run}"
+    # 이름 앞에 «_» 를 붙이지 않는다 — Book 탭 목록이 «_» 책을 뺀다(11-05 체험에서 시험 책이 목록에 없었다)
+    book = R.kit / "bookkit" / "books" / f"precheck_{R.run}"
     (book / "dist").mkdir(parents=True, exist_ok=True)
     html = src.read_text(encoding="utf-8", errors="replace")
     m = re.search(r'id="bkmeta">\{"doc":\s*"([^"]+)"', html)
@@ -554,7 +562,7 @@ def cmd_prepare(a):
     say(f"0) devview: bash {kit / 'devview' / 'dv'}")
     say(f"1) 2) 세션 시작 명령(줄마다 새 탭): {R.dir / 'start.sh.txt'}")
     say(f"대화 탭에서 MAIN 에 보낼 글: [precheck {run}] {tok('T1', run)} 받았으면 {tok('ACK-T1', run)} 한 줄만 답해 줘")
-    say(f"시험 책 주소(page_port 기본 {a.port + 100}): /{guess_page_prefix(kit)}{note.get('rel', '-')}")
+    say(f"시험 책 주소(devview 같은 주소 · Book 탭 — 2026-11-05 다른 포트는 대회 브라우저에서 막힘): /pg/{guess_page_prefix(kit)}{note.get('rel', '-')}")
     say(f"결과: {kit / REPORT}")
     return 0
 
@@ -599,8 +607,14 @@ def cmd_sub_worktree(R, a):
     root, py = R.st["root"], R.st["py"]
     wt = R.dir / "worktree"
     rc, head = run_cmd(["git", "-C", root, "rev-parse", "HEAD"])
+    seed = None
+    if rc != 0:
+        # 체험은 ready-start 를 안 돌려 커밋이 없다 — 시험용 빈 커밋(이것도 서브 샌드박스의 .git 쓰기 시험이다)
+        seed, sout = run_cmd(["git", "-C", root, "-c", "user.name=precheck", "-c", "user.email=precheck@local", "commit", "--allow-empty", "-q", "-m", f"precheck {R.run} 시험 커밋"])
+        say(f"시험 빈 커밋 종료코드 {seed} · {last_line(sout)}")
+        rc, head = run_cmd(["git", "-C", root, "rev-parse", "HEAD"])
     head = head.strip() if rc == 0 else ""
-    res = {"head": head, "path": str(wt), "py": py, "cwd": os.getcwd(), "thread": os.environ.get("CODEX_THREAD_ID", "")}
+    res = {"head": head, "path": str(wt), "py": py, "cwd": os.getcwd(), "thread": os.environ.get("CODEX_THREAD_ID", ""), "seed_commit": seed}
     if not head:
         res.update(add_rc=rc, out="HEAD 없음 — 커밋이 있는 저장소가 아님")
     else:
@@ -674,6 +688,14 @@ def cmd_sub_book(R, a):
     res_["chrome"] = {"rc": rc, "out": last_line(out)}
     R.put_evidence("book", res_)
     say(" · ".join(f"{k} {v['rc']}" for k, v in res_.items()))
+    # 양식 그대로 실제 빌드 — 대회 파이썬 · pandas 판에서 도는지 · 브라우저 없음 건너뛰기 · Book 목록에 뜨는 책
+    name = f"precheckb_{R.run}"
+    book = R.kit / "bookkit" / "books" / name
+    rc1, o1 = run_cmd([py, R.kit / "bookkit" / "new_book.py", name, "--task", R.st["root"]], cwd=R.kit)
+    rc2, o2 = run_cmd([py, R.kit / "bookkit" / "engine" / "build_book.py", book, "--stage", "1"], cwd=R.kit) if rc1 == 0 else (None, "")
+    html = sorted(str(x) for x in (book / "dist").glob("*.html")) if (book / "dist").is_dir() else []
+    R.put_evidence("bookbuild", {"new_rc": rc1, "build_rc": rc2, "out": last_line(o2 or o1), "html": html, "book": str(book)})
+    say(f"책 빌드 new {rc1} · build {rc2} · html {len(html)}")
     return 0
 
 
@@ -868,7 +890,7 @@ def turns_between(r, a, b):
 
 # 서브 대상 이름(경로 · ID)
 def names(k):
-    return {str(k.id), str(k.agent_path)}
+    return {str(k.id), str(k.agent_path), str(k.agent_path).rsplit("/", 1)[-1]}
 
 
 # 서브 간 대화 재료 — (A, B, A 의 send, A 의 followup)
@@ -1175,6 +1197,15 @@ def j_e2(R):
                f"없는 것 {' '.join(bad)} — 책 검사는 건너뛴다" if bad else "")
 
 
+def j_e5(R):
+    e = R.evidence("bookbuild")
+    if not e:
+        return res(NOTRUN)
+    ok = e.get("build_rc") == 0 and e.get("html")
+    return res(PASS if ok else FAIL, f"new {e.get('new_rc')} · build {e.get('build_rc')} · html {len(e.get('html') or [])} · {e.get('out')}"[:200],
+               str(R.ev / "bookbuild.json"), "" if ok else "🔴 대회 때 책을 못 만든다 — 끝 줄 원인부터")
+
+
 def j_e3(R):
     e = R.evidence("filenode")
     if not e:
@@ -1199,7 +1230,7 @@ JUDGES = {"R1": j_r1, "P1": j_p1, "P2": j_p2, "H0": j_h0, "H1": lambda R: j_hub(
           "Q1": j_q1, "T1": lambda R: j_echo(R, "T1"), "S8": j_s8, "L8": j_l8, "C1": j_c1, "F1": j_f1, "C2": j_c2, "W1": j_w1, "K1": j_k1,
           "WT": j_wt, "XD": j_xd, "D1": j_d1, "N1": j_n1, "SV1": j_sv1, "SV2": j_sv2, "SV3": j_sv3, "ST1": j_st1, "G1": j_g1, "G2": j_g2,
           "M1": j_m1, "M2": lambda R: j_m234(R, "task"), "M3": lambda R: j_m234(R, "verify"), "M4": lambda R: j_m234(R, "question"),
-          "E1": j_e1, "E2": j_e2, "E3": j_e3, "E4": j_e4}
+          "E1": j_e1, "E2": j_e2, "E3": j_e3, "E4": j_e4, "E5": j_e5}
 
 
 # 전체 판정 — 항목 하나의 예외가 다른 항목을 막지 않는다 · 자동 통과가 아니면 mark 가 이긴다 · 그다음 선행 차단
@@ -1265,6 +1296,11 @@ def left_rows(R):
     e = R.evidence("worktree") or {}
     if e.get("add_rc") == 0:
         rows.append(f"- 시험 worktree: {e.get('path')} · remove 종료코드 {e.get('remove_rc')}")
+    if e.get("seed_commit") == 0:
+        rows.append(f"- 시험 빈 커밋: {R.st.get('root')} 의 «precheck {R.run} 시험 커밋»(체험 기계에만)")
+    bb = R.evidence("bookbuild") or {}
+    if bb.get("book"):
+        rows.append(f"- 빌드 시험 책: {bb['book']}(git 제외)")
     fn = R.evidence("filenode") or {}
     if fn.get("node"):
         rows.append(f"- 시험 파일 노드: {fn['node']}(AGENTS.md)")

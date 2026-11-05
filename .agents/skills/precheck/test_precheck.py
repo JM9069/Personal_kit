@@ -340,7 +340,7 @@ def test_worktree_from_terminal_is_not_pass(world):
     assert table(world)[0]["WT"] == "미확인"
 
 
-def test_worktree_without_commit_fails_without_stopping(world):
+def test_worktree_without_commit_makes_seed_commit(world):
     prepare(world)
     empty = world["tmp"] / "empty"
     empty.mkdir()
@@ -352,8 +352,16 @@ def test_worktree_without_commit_fails_without_stopping(world):
     sp.write_text(json.dumps(st), encoding="utf-8")
     world["env"]["CODEX_THREAD_ID"] = "sub"
     pc(world, "sub-worktree")
-    rows, _ = table(world)
-    assert rows["WT"] == "실패" and rows["G1"] == "통과"
+    rows, text = table(world)
+    assert rows["WT"] == "통과" and rows["G1"] == "통과" and "시험 빈 커밋" in text
+
+
+def test_test_book_is_listed_and_main_short_name_counts(world):
+    _, st = prepare(world)
+    assert not Path(st["note"]["book"]).name.startswith("_")
+    p = load()
+    k = type("K", (), {"id": "x", "agent_path": "/root/c1"})
+    assert "c1" in p.names(k)
 
 
 # ======= 화면 왕복 =======
@@ -491,7 +499,8 @@ def test_sub_file_makes_node(world):
 def test_sub_book_records_without_install(world):
     prepare(world)
     pc(world, "sub-book")
-    assert table(world)[0]["E2"] in ("통과", "실패")
+    rows, _ = table(world)
+    assert rows["E2"] in ("통과", "실패") and rows["E5"] == "실패"
 
 
 def test_hub_send_needs_tag_and_ack(world):

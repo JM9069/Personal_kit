@@ -169,9 +169,9 @@ def test_books_ui(url, port):
         check("마지막 판 = 파랑(pend) · 앞 판 = 회색(done) · 맨 위 줄 고름(is-on)",
               "pend" in cls[0] and "is-on" in cls[0] and "pend" in cls[1] and "done" in cls[2], cls)
         check("앞 판 줄 배경 = 설문 완료 회색(#2b2d31)", items.nth(2).evaluate("e => getComputedStyle(e).backgroundColor") == "rgb(43, 45, 49)")
-        want = f"http://127.0.0.1:{port + 100}/bookkit/books/01_oht/dist/01_oht__v2_2%EC%B0%A8%ED%8C%90.html"
+        want = f"http://127.0.0.1:{port}/pg/bookkit/books/01_oht/dist/01_oht__v2_2%EC%B0%A8%ED%8C%90.html"
         src = page.locator(".dv-book-frame").get_attribute("src")
-        check("iframe 주소 — 페이지 서버(포트 +100)의 맨 위 판", src == want, src)
+        check("iframe 주소 — 같은 주소 /pg/ 의 맨 위 판(2026-11-05 — 다른 포트는 대회 브라우저에서 막힘)", src == want, src)
         ok = wait_for(lambda: page.frame(url=lambda u: "01_oht__v2" in u) is not None
                       and page.frame(url=lambda u: "01_oht__v2" in u).locator("#bt").count() == 1, 8)
         check("iframe 안 책이 실제로 열림(제목 글자)", ok and page.frame(url=lambda u: "01_oht__v2" in u).locator("#bt").inner_text() == "OHT 책 2차판")
@@ -284,7 +284,7 @@ def test_kit_ui(url, port):
         page.keyboard.press("Alt+b")
         wait_for(lambda: page.locator(".dv-book-frame").get_attribute("src") is not None, 5)
         src = page.locator(".dv-book-frame").get_attribute("src") or ""
-        check("Book iframe — 페이지 서버의 kit/bookkit/… 주소", src.startswith(f"http://127.0.0.1:{port + 100}/kit/bookkit/books/01_oht/"), src)
+        check("Book iframe — 같은 주소 /pg/kit/bookkit/… 주소", src.startswith(f"http://127.0.0.1:{port}/pg/kit/bookkit/books/01_oht/"), src)
         br.close()
 
 
