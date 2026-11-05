@@ -1446,7 +1446,30 @@ def api_hub_queue(b):
 
 
 def api_hub_magic(b):
+    sel = b.get("selection") if isinstance(b.get("selection"), dict) else {}
+    if (b.get("view") == "book" and str(b.get("nick") or "").lower() == "2nd" and sel.get("note") and sel.get("doc")
+            and str(b.get("instruction") or "").strip()):
+        return hub_note_instruction(str(sel["doc"]), str(sel["note"]), str(b["instruction"]).strip())
     return hub_call("magic", KIT, b, ft=FT, ws=FT_WS, resolve=safe)
+
+
+def hub_note_instruction(doc, nid, text):
+    """2ND 지시 붙은 마법봉(Alt+R) + 책 스티커 — 스티커 마법봉 길(note_magic_api: 409 판정 · magic_rid)로
+    답이 달린 스티커는 지시 글을 꼬리 질문(thread)으로 만들어 그 꼬리를 보냄(원 답을 덮지 않음)"""
+    # 책 html 이 든 폴더(= 페이지 경로의 «/api/notes» 앞) · notes.json
+    prefix = "/".join(norm_rel(doc).split("/")[:-1])
+    p = notes_file(prefix)
+    with NOTES_LOCK:
+        hit = next((n for n in notes_load(p) if n.get("id") == nid), None)
+    if hit is None:
+        raise HttpError(404, "그런 스티커 없음")
+    if hit.get("answer"):
+        _, full = notes_api("POST", prefix, f"{nid}/thread", {}, json.dumps({"q": text}, ensure_ascii=False).encode("utf-8"))
+        tid = full["thread"][-1]["id"]
+        _, res = note_magic_api(p, nid, tid)
+        return {"ok": True, "id": res.get("rid"), "msg": f"스티커 {nid} 꼬리 질문 {tid} · 2ND 에 보냄 {res.get('rid')}"}
+    _, res = note_magic_api(p, nid, instruction=text)
+    return {"ok": True, "id": res.get("rid"), "msg": f"스티커 {nid} · 지시 · 2ND 에 보냄 {res.get('rid')}"}
 
 
 # ======= Book 보기 — 북키트 책 목록 =======
@@ -1896,7 +1919,7 @@ def notes_api(method, prefix, rest, query, raw):
     raise HttpError(405, "허용 안 됨")
 
 
-def note_magic_api(p, nid, tid=None):
+def note_magic_api(p, nid, tid=None, instruction=""):
     """POST …/api/notes/<id>/magic · …/<id>/thread/<꼬리 id>/magic — 그 스티커(꼬리 질문) 글 · 자리로 2ND 마법봉(허브)
     본문은 안 읽음(서버가 notes.json 에서 다시 읽음) · 답이 달리기 전 같은 질문 재요청은 409(꼬리는 꼬리 단위) · 반환 (상태 코드, {ok, rid})"""
     key = (str(p), nid, tid)
@@ -1915,7 +1938,8 @@ def note_magic_api(p, nid, tid=None):
         NOTES_SENDING.add(key)
     # queue 는 잠금 밖에서(최대 30초)
     try:
-        res = hub_call("note_magic", KIT, hit, p, str(hit.get("doc") or ""), **({"tid": tid} if tid else {}))
+        res = hub_call("note_magic", KIT, hit, p, str(hit.get("doc") or ""), **({"tid": tid} if tid else {}),
+                       **({"instruction": instruction} if instruction else {}))
     finally:
         with NOTES_LOCK:
             NOTES_SENDING.discard(key)

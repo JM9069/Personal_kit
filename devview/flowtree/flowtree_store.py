@@ -496,14 +496,19 @@ def op_answer_start(tree, rev, role, question):
     return {"id": question, "msg": f"{question} 답변 준비 중"}
 
 
-# 2ND — 답 덧붙이기
-# question: 질문 id / short: 결론 한 줄(60자) / text: 본문
-def op_answer(tree, rev, role, question, short, text=""):
-    # 질문 노드
-    n = need_node(tree, question, "question")
+# 2ND — 답 덧붙이기(질문 노드 · 설문 노드 — 설문은 «질문 · 답» 칸: 물은 글 ask 를 같이 남김 · 유저 답 votes 는 안 건드림)
+# question: 질문 · 설문 id / short: 결론 한 줄(60자) / text: 본문 / ask: 설문 노드에 물은 글(메모 · 입력창 글)
+def op_answer(tree, rev, role, question, short, text="", ask=""):
+    # 질문 · 설문 노드
+    n = need_node(tree, question)
+    if n.get("kind") not in ("question", "survey"):
+        raise StoreError(f"«{question}» 는 {WORK_KINDS.get(n.get('kind'), n.get('kind'))} — 질문 · 설문 아님")
     short = need_text(short, "결론(--short)")
     check_short(short, "결론(--short)")
-    n.setdefault("answers", []).append(record(rev, role, short=short, text=str(text or "").strip()))
+    rec = record(rev, role, short=short, text=str(text or "").strip())
+    if n["kind"] == "survey":
+        rec["q"] = need_text(ask, "물은 글")
+    n.setdefault("answers", []).append(rec)
     return {"id": question, "msg": f"{question} 답변 완료"}
 
 

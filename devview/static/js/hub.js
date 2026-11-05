@@ -1,5 +1,5 @@
 // 코덱스 허브 — devview 모든 보기 좌하단(대화 보기 제외)의 Codex 세션판
-//   행 = 세션(기본 MAIN · 2ND + 추가 등록) · 닉네임 | effort | 맥락 | 지금 작업 · 행 테두리 = 상태(작업 중 녹색 빙글 · 턴 끝 녹색 점멸 · 오류 빨강 점멸)
+//   행 = 세션(기본 MAIN · 2ND + 추가 등록) · 닉네임 | effort | 맥락 | 지금 작업 · 행 테두리 = 상태(작업 중 노랑 빙글 · 턴 끝 녹색 점멸 · 오류 빨강 점멸)
 //   행 클릭 = 선택(확인 → 점멸 꺼짐) → 누적창(허브 바로 위) + 행 오른쪽 아이콘 트레이(문서 = 직접 입력 · 마법봉 = 역할 magic)
 //   입력창(허브 바로 위 · Enter 줄바꿈 · ✕ 취소 · ✈ 전송 · Esc 로 안 닫힘) · Esc = 행 선택 해제 · 작은 접기 단추
 //   − 단추 = 최소화(세션 이름 칩만 · 화면 좌하단 · 왼쪽 = css --dv-hub-min-left) · + = 최소화 · 접힘 둘 다 풀고 가장 펼친 상태
@@ -165,7 +165,7 @@ export function initHub(info, d) {
 // 보기에 맞춰 보이기 — 대화 · Book 보기에서는 숨김(Book 은 왼쪽 책 목록을 가려서)
 function syncView() {
   if (!box) return;
-  box.hidden = ['chat', 'book'].includes(deps.view?.());
+  box.hidden = ['chat', 'book'].includes(deps.view?.()) && !(mode === 'input' && inputCtx?.kind === 'note');
   if (box.hidden) el.tip.hidden = true;
   else mover?.apply();
 }
@@ -323,22 +323,26 @@ async function loadAcc(first = false) {
 }
 
 // ======= 입력창 =======
-// 열기 — 문서 아이콘(queue) · 2ND 마법봉(magic, 질문 전용)
-// nick: 닉네임 / kind: queue · magic / snap: 2ND 선택 스냅샷
+// 열기 — 문서 아이콘(queue) · 2ND 마법봉(magic, 질문 전용) · 지시 붙은 마법봉(note — Alt+E MAIN · Alt+R 2ND)
+// nick: 닉네임 / kind: queue · magic · note / snap: 누른 순간의 선택 스냅샷
 function openInput(nick, kind, snap = null) {
   if (!nick) return;
   closeAcc();
   mode = 'input';
   inputCtx = { nick, kind, snap };
+  // 허브가 숨는 보기(Book · 대화)에서도 지시 입력 동안은 보임 — 닫으면 syncView 가 되돌림
+  if (box.hidden) box.hidden = false;
   el.input.hidden = false;
   el.acts.hidden = false;
-  // 머리 줄 — 보낼 곳 · (2ND) 대상
-  const head = kind === 'magic' ? `질문 → ${labelOf(nick)} · 대상: ${snap?.label || '없음(섬 질문)'}` : `→ ${labelOf(nick)} 직접 입력 (codex queue)`;
+  // 머리 줄 — 보낼 곳 · 대상
+  const head = kind === 'magic' ? `질문 → ${labelOf(nick)} · 대상: ${snap?.label || '없음(섬 질문)'}`
+    : kind === 'note' ? `지시 → ${labelOf(nick)} 마법봉 · 대상: ${snap?.label || '대상 없음'}` : `→ ${labelOf(nick)} 직접 입력 (codex queue)`;
   el.head.textContent = queueInfo.ok ? head : `${head} — 🔴 queue 불가: ${queueInfo.reason || '원인 모름'}`;
   el.head.classList.toggle('is-bad', !queueInfo.ok);
-  el.input.classList.toggle('is-magic', kind === 'magic');
+  el.input.classList.toggle('is-magic', kind !== 'queue');
   el.ta.value = drafts[`${nick}:${kind}`] || '';
-  el.ta.placeholder = kind === 'magic' ? '질문 — Enter 는 줄바꿈 · 전송은 ✈' : '보낼 글 — Enter 는 줄바꿈 · 전송은 ✈';
+  el.ta.placeholder = kind === 'magic' ? '질문 — Enter 는 줄바꿈 · 전송은 ✈' : kind === 'note' ? '지시 — Enter 는 줄바꿈 · 전송은 ✈'
+    : '보낼 글 — Enter 는 줄바꿈 · 전송은 ✈';
   setTimeout(() => el.ta.focus(), 0);
 }
 
@@ -346,12 +350,13 @@ function openInput(nick, kind, snap = null) {
 // clear: 글 지우기
 function closeInput(clear) {
   if (inputCtx && clear) delete drafts[`${inputCtx.nick}:${inputCtx.kind}`];
-  if (inputCtx?.kind === 'magic') deps.clearMark?.();
+  if (inputCtx && inputCtx.kind !== 'queue') deps.clearMark?.();
   inputCtx = null;
   mode = null;
   el.input.hidden = true;
   el.acts.hidden = true;
   el.ta.blur();
+  syncView();
   if (picked) openAcc();
 }
 
@@ -369,6 +374,11 @@ async function sendInput() {
       // 2ND 질문 — 누른 순간의 보기 · 선택
       const res = await api('hub/magic', { body: { nick: c.nick, view: c.snap?.view || deps.view(), selection: c.snap?.selection || {}, question: text } });
       toast(res.msg || '보냄');
+    } else if (c.kind === 'note') {
+      // 지시 붙은 마법봉 — 누른 순간의 대상 + 지시 글(답 자리 · 분배는 서버 · 세션 몫)
+      const res = await api('hub/magic', { body: { nick: c.nick, view: c.snap?.view || deps.view(), selection: c.snap?.selection || {}, instruction: text } });
+      if ((res.skipped || []).length) toast(`${res.skip_note || '뺌'} — 뺌 · 나머지 보냄`, 'bad', 5000);
+      else toast(res.msg || '보냄');
     } else {
       await api('hub/queue', { body: { nick: c.nick, text } });
       toast(`${labelOf(c.nick)} 에 보냄`);
@@ -382,17 +392,35 @@ async function sendInput() {
 }
 
 // ======= 마법봉 =======
-// main = 그래프에서 고른 노드(작업 · 검증 · 질문)로 바로 · 2nd = 누른 순간의 선택을 스냅샷 → 질문 입력창
+// main = 그래프에서 고른 노드(작업 · 검증 · 질문 · 답한 설문)로 바로 · 2nd = 누른 순간의 선택을 스냅샷 → 질문 입력창
+//   2nd 그래프: 고른 질문 노드(질문 = 제목) · 메모 있는 설문 노드(질문 = 메모)는 입력창 없이 바로 — 서버가 need_input 이면 입력창
 // nick: 닉네임
 async function wand(nick) {
   // 고른 행
   const r = rows.find((x) => x.nick === nick);
   if (!r?.role) return;
+  // 그래프 안 열린 입력 칸(메모 · 제목)을 먼저 저장 — 칸을 벗어나지 않고 눌러도 친 글로 보냄
+  if (deps.view?.() === 'graph') await deps.flush?.();
   if (r.role === '2nd') {
     // 누른 순간의 선택 — 입력창으로 포커스가 옮겨 가도 이 범위로
     const snap = snapshot();
+    if (snap.view === 'graph' && (snap.selection.nodes || []).length) {
+      try {
+        // 질문 글 없이 먼저 — 답 자리 노드(질문 · 설문)는 서버가 트리로 판정
+        const res = await api('hub/magic', { body: { nick, view: 'graph', selection: snap.selection } });
+        if (!res.need_input) { toast(res.msg || '보냄'); return; }
+      } catch (e) {
+        toast(`마법봉 실패 — ${e.message}`, 'bad', 6000);
+        return;
+      }
+    }
     if (snap.mark) deps.markCode?.(snap.mark);
     openInput(nick, 'magic', snap);
+    return;
+  }
+  // MAIN 은 그래프 보기에서만 — 다른 보기에서 마지막 그래프 선택을 보내지 않음
+  if (deps.view?.() !== 'graph') {
+    toast('MAIN 마법봉(Alt+Q)은 그래프 보기에서 — 그래프에서 노드를 고른 뒤 · 지시와 함께면 Alt+E', 'bad', 4500);
     return;
   }
   // 그래프 선택
@@ -406,7 +434,9 @@ async function wand(nick) {
   try {
     // 서버 응답
     const res = await api('hub/magic', { body: { nick, view: 'graph', selection: { nodes, graph_view: fs.view || '' } } });
-    toast(res.msg || '보냄');
+    // 답 없는 · 보류 · 이미 반영한 설문은 서버가 빼고 보냄 — 뺀 것을 알림
+    if ((res.skipped || []).length) toast(`${res.skip_note || '뺌'} — 뺌 · 나머지 보냄`, 'bad', 5000);
+    else toast(res.msg || '보냄');
   } catch (e) {
     toast(`마법봉 실패 — ${e.message}`, 'bad', 6000);
   }
@@ -422,6 +452,21 @@ export function hubWand(role) {
   if (mode === 'input' && inputCtx?.kind === 'magic' && inputCtx.nick === r.nick) { el.ta.focus(); return; }
   if (minimized) setMin(false);
   wand(r.nick);
+}
+
+// 지시 붙은 마법봉 단축키(Alt+E = MAIN · Alt+R = 2ND) — 누른 순간의 선택 → 그 역할 행의 입력창(자동 전송 없음)
+// role: main · 2nd
+export async function hubWandNote(role) {
+  // 그 역할의 행
+  const r = rows.find((x) => x.role === role);
+  if (!r) { toast(`${role.toUpperCase()} 세션 없음`, 'bad'); return; }
+  if (mode === 'input' && inputCtx?.kind === 'note' && inputCtx.nick === r.nick) { el.ta.focus(); return; }
+  if (minimized) setMin(false);
+  // 그래프 안 열린 입력 칸을 먼저 저장 — 그 뒤 선택 스냅샷
+  if (deps.view?.() === 'graph') await deps.flush?.();
+  const snap = snapshot();
+  if (snap.mark) deps.markCode?.(snap.mark);
+  openInput(r.nick, 'note', snap);
 }
 
 // 지금 보기의 선택 스냅샷 — {view, selection, label, mark}
@@ -440,6 +485,11 @@ function snapshot() {
     const lines = s.range ? (s.range.start_line === s.range.end_line ? `${s.range.start_line}줄` : `${s.range.start_line}–${s.range.end_line}줄`) : '';
     return { view: 'code', selection: { file: s.file, doc_kind: s.doc_kind, readonly: s.readonly, range: s.range, text: s.text, table: s.table },
       label: `${s.file}${lines ? ` ${lines}` : ''}${!s.range && s.text ? ' (고른 글자)' : ''}`, mark: s.range ? s : null };
+  }
+  if (v === 'book') {
+    // 책 — 마지막으로 누른 스티커(책 iframe 이 알려 줌) · 책 html 경로
+    const b = deps.bookSel?.() || {};
+    return { view: 'book', selection: b.note ? { note: b.note, doc: b.doc } : {}, label: b.note ? `책 스티커 ${b.note}` : '' };
   }
   if (v === 'git') {
     const g = deps.gitSel?.() || {};

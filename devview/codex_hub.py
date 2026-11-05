@@ -7,6 +7,8 @@
              GET  /api/hub/subagents?nick=      그 세션의 서브 줄(이름 · 일함/쉼/중단 · 지금 일 한 줄 — 서브 기록만 이어 읽음)
              POST /api/hub/queue {nick, text}   그 세션에 codex queue(셸 없이 인자 목록)
              POST /api/hub/magic {nick, view, selection, question}   요청 파일 + (2ND 그래프 · Git · 설문 · 앱) 질문 노드 즉시 등록 + queue «🪄 지시 본문 … $역할-magic 요청id»
+             (2ND 그래프: 고른 질문 노드 = 질문은 제목 · 메모 있는 설문 노드 = 질문은 메모 → 입력창 없이 · 답 자리 = 그 노드 · 질문 글이 없으면 {need_input} 으로 화면이 입력창)
+             (MAIN 그래프: 답한 설문 노드 = «결정: 선택지 · 메모 — 반영하고 이어진 작업 시작» · 답 없는 설문은 빼고 skipped 로 알림)
              (책 스티커: 페이지 서버 POST /api/notes/<id>/magic · /api/notes/<id>/thread/<꼬리 id>/magic → note_magic → 2ND · 답 자리 note)
              (설문 제출: survey.py submit → magic(view survey) → 확정 문항 MAIN · 질문 문항 2ND · 답 자리 survey)
 파일: <작업 폴더>/.codex-hub/ — sessions/<닉>.json(hub.py register · status) · logs/<닉>.jsonl(hub.py log) · requests/<요청id>.json(여기서 씀)
@@ -996,6 +998,148 @@ def add_question(ft, ws, text, targets, view):
     return res["id"], tg
 
 
+# 책 스티커 선택 채우기 — 화면은 {note, doc(책 html 경로)} 만 보냄 → notes.json(책 폴더) 의 스티커 글 · 자리 · 블록
+#   이미 notes_file 이 있으면(페이지 서버 note_magic) 그대로
+# root: 작업 폴더 / sel: 선택
+def book_sel(root, sel):
+    if sel.get("notes_file") or not sel.get("note") or not sel.get("doc"):
+        return sel
+    # 책 html → 책 폴더(dist 의 부모) · notes.json
+    doc = str(sel["doc"]).replace("\\", "/")
+    nf = (Path(root) / doc).parent.parent / "notes.json"
+    data = read_json(nf, []) or []
+    nt = next((x for x in data if isinstance(x, dict) and x.get("id") == sel["note"]), None)
+    if nt is None:
+        raise HubError(404, f"스티커 없음: {sel['note']} ({nf.name})")
+    m = re.search(r"b=([^\s|]+)", str(nt.get("ctx") or ""))
+    return {**sel, "notes_file": str(nf.relative_to(Path(root))).replace("\\", "/"), "book": nf.parent.name,
+            "ctx": str(nt.get("ctx") or "")[:300], "block": m.group(1) if m else "", "text": str(nt.get("text") or "")}
+
+
+# MAIN 지시의 대상 — 보기의 선택(코드 줄 · 글자 · 표 칸 · Git · 책 스티커) · 없으면 None
+# view: 보기 / sel: 선택 / resolve: 상대 경로 → 실제 경로
+def ref_of(view, sel, resolve=None):
+    if view == "code" and sel.get("file"):
+        absp = None
+        if resolve:
+            try:
+                absp = str(resolve(str(sel["file"])))
+            except Exception:  # noqa: BLE001 — 경로 밖이면 상대 경로만
+                absp = None
+        return {"kind": "code", "file": str(sel["file"]), "abs": absp, "range": sel.get("range"),
+                "text": str(sel.get("text") or "")[:4000], "table": sel.get("table") if isinstance(sel.get("table"), dict) else None}
+    if view == "git" and (sel.get("commit") or sel.get("git_file")):
+        return {"kind": "git", "commit": str(sel.get("commit") or "")[:40], "git_file": str(sel.get("git_file") or "")[:500],
+                "subject": str(sel.get("subject") or "")[:200]}
+    if view == "book" and sel.get("note"):
+        return {"kind": "note", **{k: str(sel.get(k) or "")[:2000] for k in ("note", "doc", "book", "block", "notes_file", "text")}}
+    return None
+
+
+# 대상 한 줄 글 — magic_text · magic.py 가 같이 씀
+# r: ref_of 결과
+def ref_text(r):
+    if not r:
+        return ""
+    if r["kind"] == "code":
+        g = r.get("range") or {}
+        tb = r.get("table") or {}
+        return (f"파일 {r['file']}" + (f" {g.get('start_line')}–{g.get('end_line')}줄" if g.get("start_line") else "")
+                + (f" · 표 행 {tb.get('line')} 열 {tb.get('col')}" if tb else "")
+                + (f" · 고른 글자 «{short(r.get('text'), 120)}»" if str(r.get("text") or "").strip() else ""))
+    if r["kind"] == "git":
+        return "Git " + " · ".join(x for x in (r.get("commit", "")[:10], r.get("git_file", ""),
+                                               f"«{short(r.get('subject'), 60)}»" if r.get("subject") else "") if x)
+    if r["kind"] == "note":
+        return f"책 ‹{r.get('book')}› 스티커 {r.get('note')} «{short(r.get('text'), 120)}»" + (f" (블록 {r['block']})" if r.get("block") else "")
+    return ""
+
+
+# 2ND 그래프 — 고른 노드 중 답 자리가 될 질문 · 설문 노드(질문 노드 먼저 · 닫힌 질문 제외) · 반환 사전 또는 None
+#   {"id", "kind", "ask"(질문 노드 = 제목 · 설문 노드 = 메모 · 빈 글이면 입력창), "targets"(질문 선 대상 · 설문은 붙은 작업 + 함께 고른 노드)}
+# ft · ws: flowtree 모듈 · 작업 공간 / nodes: 고른 노드 목록(clean_nodes)
+def own_node(ft, ws, nodes):
+    if ft is None or ws is None or not nodes or not ws.tree_path.is_file():
+        return None
+    store = ft.flowtree_store
+    tree = store.read_json(ws.tree_path, {}) or {}
+    nm = store.node_map(tree)
+    # 고른 id · 트리 기준 종류
+    ids = [x["id"] for x in nodes]
+    q = next((i for i in ids if (nm.get(i) or {}).get("kind") == "question" and not nm[i].get("closed")), None)
+    s = next((i for i in ids if (nm.get(i) or {}).get("kind") == "survey"), None) if q is None else None
+    if q is None and s is None:
+        return None
+    nid = q or s
+    nd = nm[nid]
+    # 대상 — 질문 선(질문 노드) · 붙은 작업(설문 노드) + 함께 고른 다른 노드
+    base = [e.get("target") for e in tree.get("edges", []) if e.get("kind") == "asks" and e.get("source") == nid] if q else \
+        ([nd["parent"]] if nd.get("parent") else [])
+    tg = list(dict.fromkeys([t for t in base + [i for i in ids if i != nid] if t]))
+    ask = str(nd.get("title") or "") if q else store.survey_vote(nd)["memo"]
+    return {"id": nid, "kind": nd["kind"], "ask": ask.strip(), "title": str(store.eff(nd, "title") or ""), "targets": tg,
+            "rev": int(tree.get("rev") or 0), "answers": [a for a in nd.get("answers") or [] if isinstance(a, dict)]}
+
+
+# 고른 노드 중 열린 질문 노드 id 목록(트리 기준 · 고른 순서)
+# ft · ws: flowtree 모듈 · 작업 공간 / nodes: 고른 노드 목록
+def open_questions(ft, ws, nodes):
+    if ft is None or ws is None or not nodes or not ws.tree_path.is_file():
+        return []
+    nm = ft.flowtree_store.node_map(ft.flowtree_store.read_json(ws.tree_path, {}) or {})
+    return [x["id"] for x in nodes if (nm.get(x["id"]) or {}).get("kind") == "question" and not nm[x["id"]].get("closed")]
+
+
+# 그 노드(질문 · 설문)에 보낸 요청 중 아직 답이 안 달린 것 — 요청 id 또는 None
+#   요청 target.rev = 보낼 때의 그래프 판 번호 · 그 뒤 판(seq)의 답이 있으면 답 달림
+# root: 작업 폴더 / own: own_node 결과
+def pending_request(root, own):
+    best = None
+    for f in sorted((Path(root) / HUB / "requests").glob("m*.json")):
+        r = read_json(f, {}) or {}
+        t = r.get("target") or {}
+        if t.get("question") != own["id"] or not t.get("own") or not isinstance(t.get("rev"), int) or r.get("failed"):
+            continue
+        if not any(int(a.get("seq") or 0) > t["rev"] for a in own["answers"]):
+            best = r.get("id") or f.stem
+    return best
+
+
+# MAIN — 설문 노드 상태: none(답 없음) · hold(보류) · acked(이미 반영 — 마지막 답보다 반영 기록이 새것) · ok(결정 · 반영 전)
+# store: flowtree_store / nd: 설문 노드
+def survey_state(store, nd):
+    v = store.survey_vote(nd)
+    if v["hold"]:
+        return "hold"
+    if v["pick"] is None and not v["memo"]:
+        return "none"
+    if v["seq"] <= max((int(a.get("seq") or 0) for a in nd.get("acks") or []), default=0):
+        return "acked"
+    return "ok"
+
+
+# MAIN — 설문 노드에 유저 답이 있나(선택 · 기타 · 보류 · 메모 중 하나)
+# store: flowtree_store / nd: 설문 노드
+def survey_answered(store, nd):
+    v = store.survey_vote(nd)
+    return v["pick"] is not None or v["hold"] or bool(v["memo"])
+
+
+# 설문 노드 결정 글 — «‹선택지 라벨›» · 기타 · 보류 · 선택 없음
+# store: flowtree_store / nd: 설문 노드
+def survey_choice(store, nd):
+    v = store.survey_vote(nd)
+    opts = nd.get("options") or []
+    if v["hold"]:
+        return "보류"
+    if v["pick"] == store.PICK_OTHER:
+        return "기타"
+    if v["pick"] is not None and 0 <= v["pick"] < len(opts):
+        o = opts[v["pick"]]
+        return f"{v['pick'] + 1}. {o.get('label', '')}" + (f" — {short(o.get('text'), 80)}" if o.get("text") else "")
+    return "선택 없음"
+
+
 # 한 줄로 줄이기
 # s: 글 / n: 최대 글자
 def short(s, n=120):
@@ -1041,6 +1185,16 @@ def magic_text(n, rid, req, ft=None, ws=None, claude=False):
             if kind == "question":
                 body.append(f"질문 노드 ‹{short(title, 60)}›({x['id']}) 답해 줘")
                 continue
+            if kind == "survey" and nd and survey_state(ft.flowtree_store, nd) == "ok":
+                # 설문 노드 — 유저 답(선택 · 메모)을 결정으로 보고 반영 → 붙은 작업 시작(답 없는 설문은 magic() 이 미리 뺌)
+                fs = ft.flowtree_store
+                memo = fs.survey_vote(nd)["memo"]
+                par = nodes.get(nd.get("parent")) or {}
+                body.append(f"설문 ‹{short(fs.eff(nd, 'title') or title, 60)}›({x['id']}) 결정: ‹{survey_choice(fs, nd)}›"
+                            + (f" · 메모 {short(memo, 160)}" if memo else "")
+                            + (f" — 반영하고 이어진 작업 ‹{short(par.get('title') or nd['parent'], 40)}›({nd['parent']}) 시작" if nd.get("parent")
+                               else " — 반영하고 이어진 작업 시작"))
+                continue
             if kind != "task":
                 body.append(f"맥락: ‹{short(title, 60)}›({x['id']})")
                 continue
@@ -1057,6 +1211,13 @@ def magic_text(n, rid, req, ft=None, ws=None, claude=False):
             for r in rows:
                 if fs.func_pending(r):
                     body.append(f"이름 바뀜: {fs.func_change(r)} — 코드 · 시험 · 문서도 새 이름으로 바꾸고 funcs-ack {x['id']}")
+        if req.get("instruction"):
+            # 지시 붙은 마법봉(Alt+E) — 대상(노드 · 보기의 선택) + 지시 글
+            if t.get("ref"):
+                body.append(f"대상: {ref_text(t['ref'])}")
+            elif not req.get("nodes"):
+                body.append(f"대상 없음(보기 {req.get('view') or '-'})")
+            body.append(f"지시: {short(req['instruction'], 1000)}")
     else:
         # 대상 한 줄
         if t.get("kind") == "note" and t.get("thread"):
@@ -1076,16 +1237,29 @@ def magic_text(n, rid, req, ft=None, ws=None, claude=False):
                 tg = [f"‹{short((nodes.get(i) or {}).get('title') or i, 40)}›({i})" for i in t.get("targets") or []]
                 where = "노드 " + " · ".join(tg) if tg else ("Git " + " · ".join(x for x in (str(t.get("commit") or "")[:10], str(t.get("git_file") or "")) if x)
                                                              if t.get("commit") or t.get("git_file") else "")
+                if t.get("own"):
+                    # 고른 질문 · 설문 노드 자체가 답 자리(새 질문 노드 없음) — «(질문 노드 ‹…›(q…) 안에 답 · 대상: …)»
+                    own = f"{'설문' if t['own'] == 'survey' else '질문'} 노드 ‹{short(t.get('own_title') or t['question'], 40)}›({t['question']}) 안에 답"
+                    body.append(f"질문: {short(req.get('question'), 300)} ({own}" + (f" · 대상: {where})" if where else ")"))
+            elif t.get("kind") == "chat":
+                where = f"없음(보기 {req.get('view') or '-'}) — 답은 대화로"
             else:
                 r = t.get("range") or {}
                 where = f"{t.get('file')}" + (f" {r.get('start_line')}–{r.get('end_line')}줄" if r.get("start_line") else "")
-            body.append(f"질문: {short(req.get('question'), 300)}" + (f" (대상: {where})" if where else ""))
+            if not t.get("own"):
+                body.append(f"질문: {short(req.get('question'), 300)}" + (f" (대상: {where})" if where else ""))
+        ins = req.get("instruction")
+        if ins and ins == req.get("question"):
+            # 지시 글이 곧 질문 — «질문:» 을 «지시:» 로
+            body = [x.replace("질문: ", "지시: ", 1) if x.startswith("질문: ") else x for x in body]
+        elif ins:
+            body.append(f"지시: {short(ins, 1000)}")
     return "🪄 " + "\n".join(body or ["(대상 없음)"]) + f"\n{'/' if claude else '$'}{MAGIC[n]} {rid}"
 
 
 # 책 스티커 → 2ND 마법봉 요청 — 페이지 서버가 notes.json 의 스티커를 읽어 부름(클라이언트는 id 만 보냄)
 # root: 작업 폴더 / note: 스티커 항목 / notes_file: notes.json 경로 / doc: 책 html 상대 경로 / tid: 꼬리 질문 id(없으면 원 질문)
-def note_magic(root, note, notes_file, doc, tid=None):
+def note_magic(root, note, notes_file, doc, tid=None, instruction=""):
     # 블록 ID — ctx 끝의 «b=…»
     m = re.search(r"b=([^\s|]+)", str(note.get("ctx") or ""))
     try:
@@ -1108,7 +1282,7 @@ def note_magic(root, note, notes_file, doc, tid=None):
         sel["orig_a"] = str(note.get("answer") or "")
         sel["prev"] = [{"id": t.get("id"), "q": str(t.get("q") or ""), "a": str(t.get("a") or "")} for t in th[:th.index(cur)]]
         question = str(cur.get("q") or "")
-    return magic(root, {"nick": "2nd", "view": "book", "selection": sel, "question": question})
+    return magic(root, {"nick": "2nd", "view": "book", "selection": sel, "question": question, "instruction": instruction})
 
 
 # POST /api/hub/magic — 요청 파일 → (2ND 질문 노드) → queue «🪄 지시 본문 + $역할-magic 요청id»
@@ -1122,16 +1296,21 @@ def magic(root, body, ft=None, ws=None, resolve=None):
     view = str(body.get("view") or "")
     sel = body.get("selection") if isinstance(body.get("selection"), dict) else {}
     question = str(body.get("question") or "").strip()
+    # 지시 글(Alt+E · Alt+R — 허브 입력창으로 붙인 글) · 책 스티커 선택이면 notes.json 에서 스티커 정보 채움
+    instruction = str(body.get("instruction") or "").strip()[:TEXT_MAX // 2]
+    if view == "book":
+        sel = book_sel(root, sel)
     nodes = clean_nodes(sel.get("nodes"))
     # 요청 내용
     rid = new_rid()
     req = {"id": rid, "skill": MAGIC[n], "nick": n, "role": n, "at": now_text(), "view": view, "question": question,
            "nodes": nodes, "graph_view": str(sel.get("graph_view") or ""), "root": str(Path(root).resolve()),
            "tree": str(ws.tree_path) if ws is not None else None,
-           "flowtree": str(Path(ft.__file__).resolve().parent) if ft is not None else None, "target": None}
+           "flowtree": str(Path(ft.__file__).resolve().parent) if ft is not None else None, "target": None,
+           "instruction": instruction}
     # 알림 덧붙임
     note = ""
-    if view == "survey":
+    if view == "survey" and isinstance(sel.get("survey"), dict):
         # 설문 제출(survey.py submit) — 문항 목록 · 결과 위치(답 자리 = MAIN 은 결정 문서 · 2ND 는 설명 폼)
         sv = sel.get("survey") if isinstance(sel.get("survey"), dict) else {}
         items = [{"id": str(x.get("id") or "")[:40], "question": str(x.get("question") or "")[:500], "kind": str(x.get("kind") or "")[:10],
@@ -1142,13 +1321,76 @@ def magic(root, body, ft=None, ws=None, resolve=None):
                          "project": str(sv.get("project") or "")[:80], "dir": str(sv.get("dir") or "")[:500],
                          "items": items, "extra": str(sel.get("extra") or "")[:2000]}
     elif n == "main":
-        if not nodes:
-            raise HubError(400, "노드를 고르지 않음 — 그래프에서 노드를 고른 뒤(Ctrl+클릭 여럿)")
-        req["target"] = {"kind": "work"}
+        # 답 없는 설문 노드는 뺀다(유저 답 = 결정으로 보내므로) — 같이 고른 다른 노드는 그대로
+        # 뺄 설문 — 답 없음 · 보류 · 이미 반영(지시 글이 있으면 빼지 않고 맥락으로 · 빈 틀 설문은 맥락으로 그대로 — MAIN 이 채움)
+        skipped, skip_note = [], ""
+        if nodes and not instruction and ft is not None and ws is not None and ws.tree_path.is_file():
+            fs = ft.flowtree_store
+            nm = fs.node_map(fs.read_json(ws.tree_path, {}) or {})
+            groups = {"none": [], "hold": [], "acked": []}
+            for x in nodes:
+                nd = nm.get(x["id"]) or {}
+                if nd.get("kind") == "survey" and not nd.get("frame"):
+                    st = survey_state(fs, nd)
+                    if st in groups:
+                        groups[st].append(x["id"])
+            skipped = [i for g in groups.values() for i in g]
+            skip_note = " · ".join(f"{name} {' · '.join(groups[k])}" for k, name in (("none", "답 없음"), ("hold", "보류 설문"),
+                                                                                   ("acked", "이미 반영한 설문")) if groups[k])
+            nodes = [x for x in nodes if x["id"] not in skipped]
+            req["nodes"] = nodes
+            req["skipped"] = skipped
+            req["skip_note"] = skip_note
+            if skipped:
+                note = f"{skip_note} 뺌 · "
+        if not nodes and not instruction:
+            raise HubError(400, f"보낼 노드 없음 — {skip_note}" if skipped
+                           else "노드를 고르지 않음 — 그래프에서 노드를 고른 뒤(Ctrl+클릭 여럿)")
+        # 지시 글이 있으면 노드 없이도 — 그 보기의 대상(코드 줄 · Git · 스티커)을 같이 싣는다
+        req["target"] = {"kind": "work", "ref": ref_of(view, sel, resolve) if instruction else None}
     else:
+        # 질문 노드 여럿(입력창 글 없음) — 질문마다 요청을 따로(각각 그 노드 안에 답) · 함께 고른 다른 노드는 대상
+        qs = open_questions(ft, ws, nodes) if view == "graph" and not question else []
+        if len(qs) > 1:
+            others = [x for x in nodes if x["id"] not in qs]
+            outs, errs = [], []
+            for q in qs:
+                try:
+                    outs.append(magic(root, {**body, "selection": {**sel, "nodes": [x for x in nodes if x["id"] == q] + others}}, ft, ws, resolve))
+                except HubError as e:
+                    errs.append(f"{q} {e}")
+            if not outs:
+                raise HubError(409, " · ".join(errs))
+            return {"ok": True, "id": outs[-1]["id"], "ids": [o["id"] for o in outs], "nick": n, "label": label(n), "skipped": [],
+                    "msg": f"질문 {len(outs)}개 각각 {label(n)} 에 보냄" + (f" · 못 보냄: {' · '.join(errs)}" if errs else "")}
+        # 그래프에서 고른 질문 · 설문 노드 — 답 자리 = 그 노드(질문 = 질문 노드 제목 · 설문 메모 · 입력창 글)
+        own = own_node(ft, ws, nodes) if view == "graph" else None
+        if own and own["kind"] == "survey" and not question:
+            question = own["ask"]
+        elif own and own["kind"] == "question" and not question:
+            question = own["ask"]
+        elif own and own["kind"] == "question":
+            own = None   # 입력창 글 + 질문 노드 — 새 질문(옛 동작)
+        if not question and view == "book":
+            question = str(sel.get("text") or "").strip()   # 스티커 글이 질문 · 지시는 따로
+        if not question and instruction:
+            question = instruction   # 질문할 대상 글이 없으면 지시 글이 곧 질문
+        if view == "graph" and not question:
+            # 질문할 글 없음(작업 노드만 · 메모 빈 설문) — 화면이 입력창을 연다
+            return {"ok": False, "need_input": True, "nick": n, "label": label(n),
+                    "msg": f"설문 {own['id']} 메모 없음 — 질문 입력" if own else "질문 입력"}
         if not question:
             raise HubError(400, "질문 없음")
-        if view == "book":
+        req["question"] = question
+        if own:
+            # 답 대기 중 같은 노드 재전송 막기(스티커 409 처럼) — 답이 달린 뒤 다시 보내면 새 답 덧붙임
+            wait = pending_request(root, own)
+            if wait:
+                raise HubError(409, f"이미 보냄({wait}) — {own['id']} 답 대기 중")
+            req["target"] = {"kind": "node", "question": own["id"], "targets": own["targets"], "own": own["kind"],
+                             "own_title": own["title"], "ask": question, "rev": own["rev"]}
+            note = f"{'설문' if own['kind'] == 'survey' else '질문'} {own['id']} 에 답 · "
+        elif view == "book" and sel.get("note"):
             # 책 스티커 — 답 자리 = 그 스티커 answer 칸(질문 노드는 안 만듦 · 책 질문으로 그래프가 차지 않게)
             if not sel.get("note") or not sel.get("notes_file"):
                 raise HubError(400, "스티커 id · notes.json 없음")
@@ -1171,6 +1413,9 @@ def magic(root, body, ft=None, ws=None, resolve=None):
                     absp = None
             req["target"] = {"kind": kind, "file": rel, "abs": absp, "range": sel.get("range"), "text": str(sel.get("text") or "")[:4000],
                              "table": sel.get("table") if isinstance(sel.get("table"), dict) else None}
+        elif instruction and view != "graph" and not (view == "git" and (sel.get("commit") or sel.get("git_file"))):
+            # 지시 붙은 2ND(Alt+R) · 그래프 밖 · 대상 없음 — 노드를 만들지 않고 지시 글만(답 = 2ND 대화)
+            req["target"] = {"kind": "chat"}
         else:
             # 그래프 · Git · 설문 · 앱 — 질문 노드(그래프에서 고른 노드는 대상 선 · 그 밖은 섬)
             title = question
@@ -1192,6 +1437,10 @@ def magic(root, body, ft=None, ws=None, resolve=None):
     try:
         out = deliver(reg, text)
     except HubError as e:
+        # 못 보낸 요청 — 답 대기(재전송 막기)로 치지 않게 표시
+        req["failed"] = str(e)[:300]
+        write_json(Path(root) / HUB / "requests" / f"{rid}.json", req)
         raise HubError(e.status, f"{note}요청 {rid} 저장 · {e}") from None
     return {"ok": True, "id": rid, "nick": n, "label": label(n), "question": (req["target"] or {}).get("question"),
-            "thread": reg.get("thread"), "msg": f"{note}{label(n)} 에 {'/' if claude else '$'}{MAGIC[n]} {rid}", "out": out}
+            "thread": reg.get("thread"), "msg": f"{note}{label(n)} 에 {'/' if claude else '$'}{MAGIC[n]} {rid}", "out": out,
+            "skipped": req.get("skipped") or [], "skip_note": req.get("skip_note") or ""}

@@ -72,7 +72,7 @@ description: 2ND 세션 역할 스킬 — 대회 맥락(공통) · 유저 수준
 - 세션은 MAIN · 2ND 둘 · 새로 열지 않고 압축만($hand-off → /compact → $hand-on · 시점은 유저) · 닉네임으로 부른다
 - MAIN 이 긴 턴을 도는 동안 유저가 생각을 정리하고 현황을 묻고 다음 질문을 준비하는 상대가 나다
 - 허브: 시작 때 $codex-hub 로 붙기(--nick 2nd) · 질문 답은 상태 줄만 · 🪄 로 시작하고 끝 줄이 «$2nd-magic 요청id» 인 글이 오면 그 스킬(magic.py 답 넣기는 저장소 쓰기 금지의 예외 · 책 스티커 🪄 = 답 자리 note → magic.py answer-note '답' --title '짧은 제목' · 꼬리 질문 🪄 = 같은 answer-note(제목 없이 · 그 꼬리에 답) · 같은 notes.py)
-- flowtree: 질문 노드(우하단 물음표 단추 · 유저가 만든다)가 내 일감 · 마법봉($2nd-magic)은 질문 노드만 받는다(유저가 MAIN 마법봉으로 보낸 질문은 MAIN 의 서브가 답한다) · 그리기는 MAIN 몫
+- flowtree: 질문 노드(우하단 물음표 단추 · 유저가 만든다)가 내 일감 · 마법봉($2nd-magic)은 유저가 고른 대상을 받는다 — 질문 노드(그 노드 안 답 · 여럿이면 하나씩 따로 옴) · 설문 노드(메모가 질문 · 그 설문 노드 «질문 · 답» 칸) · 파일 · 줄 · 글자 · 책 스티커 · 대상 없음(그래프 = 새 섬 질문 · 그 밖 = 대화로 답) · «지시:» 가 붙으면 그대로(Alt+R) · 자리는 show 가 정한다(유저가 MAIN 마법봉으로 보낸 질문은 MAIN 의 서브가 답한다) · 그리기는 MAIN 몫
 - 세션끼리 주고받기 = **flowtree · hand_off · WORKLOG 로**(2026-11-03 유저 지정 — 세션끼리 대화하면 유저가 끼어들 수 없다): 다른 세션에 넘길 것은 flowtree 질문 노드로 남긴다(MAIN 이 inbox 에서 본다)
 	- 세션에 글 보내기 = python3 ~/.codex/skills/codex-hub/hub.py send --to <이름> '글'(글 앞에 @보낸이름 자동 · 작은따옴표 · 샌드박스에서 막히면 밖 승인 · 성공해도 «보냄» 까지만 보고) — 유저가 시킨 그 한 번만
 - 할 일 확인: flowtree.py --role 2nd inbox(미답변 질문) · 책 스티커 목록(python3 bookkit/notes.py list → answer <id> "답" --title "짧은 제목" · 꼬리 질문은 answer <id> --thread <꼬리 id> "답" · bookkit/README.md «책 스티커») → 서브에게 답 준비 지시(위 «노드 답은 서브가»)

@@ -40,6 +40,7 @@ export function initFlow(info, d) {
     if (e.data.ft === 'open') openSplit(e.data);
     else if (e.data.ft === 'close') closeSplit(false);
     else if (e.data.ft === 'selection') ftSel = { view: String(e.data.view || ''), nodes: Array.isArray(e.data.nodes) ? e.data.nodes : [] };
+    else if (e.data.ft === 'flushed') { const f = flushWait.get(e.data.id); if (f) { flushWait.delete(e.data.id); f(); } }
   });
   $('#ftClose').addEventListener('click', () => closeSplit(true));
   // 오른쪽 칸 쪽에 포커스가 있을 때의 ` · Esc — 입력 칸 · 편집기 안에서는 그 칸 몫
@@ -135,6 +136,22 @@ export function focusFlow() {
 // 그래프 iframe 에 메시지 — 아직 안 읽혔으면 읽은 뒤 보냄(알림 종 → {ft:'focus', node, screen?})
 // m: 메시지 / 반환: 그래프 화면이 있는지
 const queued = [];
+// 마법봉 직전 «지금 칸 저장» — 그래프 안 열린 입력 칸(메모 · 제목)을 저장하고 끝나면 풀림(그래프가 없거나 답이 없으면 1.5초 뒤 그냥)
+//   저장 뒤 선택 알림(ft:'selection')이 다시 올 시간을 한 틱 더 준다
+export function flushFlow() {
+  if (!available || !loaded || !frame?.contentWindow) return Promise.resolve();
+  const id = `f${++flushSeq}`;
+  return new Promise((res) => {
+    const done = () => setTimeout(res, 30);
+    flushWait.set(id, done);
+    setTimeout(() => { if (flushWait.delete(id)) res(); }, 1500);
+    frame.contentWindow.postMessage({ ft: 'flush', id }, '*');
+  });
+}
+// 저장 기다리는 요청 id → 풀기 · 일련번호
+const flushWait = new Map();
+let flushSeq = 0;
+
 export function flowPost(m) {
   if (!available) return false;
   ensureFrame();

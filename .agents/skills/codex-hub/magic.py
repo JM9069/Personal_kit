@@ -4,6 +4,7 @@
 요청 = devview 가 마법봉을 누른 순간 쓴 <작업 폴더>/.codex-hub/requests/<요청id>.json(보기 · 고른 노드 · 파일 · 줄 · 글자 · 질문)
   python3 ~/.codex/skills/codex-hub/magic.py show 요청id                고른 대상 · 할 일 · 답 자리(상태 줄은 여기서 바꿈 · 2ND 질문 노드는 답변 준비 중으로)
   python3 ~/.codex/skills/codex-hub/magic.py answer-node 요청id --short '결론(60자)' '본문'
+    답 자리 node = 새 질문 노드 · 고른 질문 노드 · 고른 설문 노드(«질문 · 답» 칸 answers[] — 물은 글 q 도 같이)
   python3 ~/.codex/skills/codex-hub/magic.py answer-md 요청id '답'     md · txt — 고른 것 없음 = 맨 위 «🤖 질문 · 답변» 절 · 고른 글자 = 그 문단 아래 · 표 = 고른 행 아래 새 행
   python3 ~/.codex/skills/codex-hub/magic.py answer-code 요청id '답'   코드 — 고른 줄 아래 주석 · 고른 줄 없음 = 파일 맨 위(실행 · 인코딩 줄 아래)
   python3 ~/.codex/skills/codex-hub/magic.py answer-form 요청id '답'   CSV · PDF · 그 밖 · 설문 질문 문항 — 설명 폼(저장소 밖 /tmp/sv · devview 설문 탭)
@@ -126,9 +127,47 @@ def target_path(req):
 
 
 # ======= show =======
+# 지시 붙은 마법봉(Alt+E · Alt+R)의 대상 · 지시 줄 — 대상 = 보기의 선택(코드 줄 · 글자 · 표 칸 · Git · 책 스티커)
+# req: 요청 / out: 출력 줄 목록
+def instruction_lines(req, out):
+    r = (req.get("target") or {}).get("ref") or {}
+    if r.get("kind") == "code":
+        g = r.get("range") or {}
+        out.append(f"대상 파일: {r.get('file')}" + (f" · 줄 {g.get('start_line')}–{g.get('end_line')}" if g.get("start_line") else "")
+                   + (f" · 실제 경로 {r['abs']}" if r.get("abs") else ""))
+        if r.get("table"):
+            out.append(f"  표 행 {r['table'].get('line')} 열 {r['table'].get('col')}")
+        if str(r.get("text") or "").strip():
+            out.append("고른 글자:\n" + (r["text"] if len(r["text"]) <= SHOW_TEXT else r["text"][:SHOW_TEXT] + " …(줄임)"))
+    elif r.get("kind") == "git":
+        out.append(f"대상 Git: 커밋 {r.get('commit') or '-'} «{short(r.get('subject'), 50)}» · 파일 {r.get('git_file') or '-'}"
+                   f" — git show {r.get('commit') or 'HEAD'}{' -- ' + r['git_file'] if r.get('git_file') else ''}")
+    elif r.get("kind") == "note":
+        out.append(f"대상 책 스티커: 책 {r.get('book')} · 스티커 {r.get('note')} «{r.get('text')}» · 블록 {r.get('block') or '-'}"
+                   f" · notes {r.get('notes_file')}")
+    elif not req.get("nodes"):
+        out.append(f"대상 없음(보기 {req.get('view') or '-'})")
+    out.append(f"지시: {req.get('instruction')}")
+
+
+# 설문 노드가 «결정 · 반영 전» 인가 — 선택 또는 메모가 있고 · 보류 아님 · 마지막 답이 반영 기록보다 새것(허브 survey_state 의 ok)
+# store: flowtree_store / nd: 설문 노드
+def survey_ok(store, nd):
+    v = store.survey_vote(nd)
+    if v["hold"] or (v["pick"] is None and not v["memo"]):
+        return False
+    return v["seq"] > max((int(a.get("seq") or 0) for a in nd.get("acks") or []), default=0)
+
+
 # main — 고른 노드 중 hand_off 작업 · 검증 · 질문 노드를 종류별 할 일로 · 나머지는 맥락
 # req: 요청 / out: 출력 줄 목록
 def show_main(req, out):
+    if req.get("instruction") and not req.get("nodes"):
+        # 노드 없는 지시 — 대상 + 지시대로(그래프 안 읽음)
+        instruction_lines(req, out)
+        out.append("할 일: 대상 + 지시대로 — 내가 코드를 쓰지 않고 서브에게(구현 → 구현 서브 · 조사 · 질문 → 놀고 있는 서브) · 대상 파일 · 줄 · 지시를 지시문에 그대로")
+        set_status(f"작업 : 지시 {short(req.get('instruction'), 40)}")
+        return
     store, ftcli, tp = flowtree(req)
     # 그래프 · id → 노드 · 옮긴 원본(옛 promote 기록 — 명령이 빠진 판이면 빈 사전) · 지금 초
     tree = store.read_json(tp, {}) or {}
@@ -143,15 +182,23 @@ def show_main(req, out):
     # 검증 · 질문 노드(종류는 트리 기준 — 화면이 보낸 종류만 믿지 않음)
     ver = [i for i in ids if nodes.get(i, {}).get("kind") == "verify"]
     ask = [i for i in ids if nodes.get(i, {}).get("kind") == "question"]
+    # 설문 노드 — 유저 답(선택 · 메모)이 있는 것 = 결정으로 받음(답 없는 설문은 허브가 미리 뺌)
+    sv = [i for i in ids if nodes.get(i, {}).get("kind") == "survey" and survey_ok(store, nodes[i])]
     for i in ids:
-        if i in work or i in ver or i in ask:
+        if i in work or i in ver or i in ask or i in sv:
             out.extend(ftcli.show_lines(tree, i, now))
         elif i in nodes:
             out.append("맥락: " + ftcli.node_line(nodes[i], nodes, now) + (f" — {nodes[i]['summary']}" if nodes[i].get("summary") else ""))
         else:
             out.append(f"맥락: {i}")
-    if not work and not ver and not ask:
-        out.append("멈춤: 고른 노드에 작업 · 검증 · 질문 노드 없음 — 노드를 만들지 말고 유저에게 무엇을 할지 묻고 턴을 끝낸다")
+    if req.get("instruction"):
+        instruction_lines(req, out)
+        out.append("지시를 따른다 — 위 노드 · 대상에 지시대로(서브에게)")
+    if not work and not ver and not ask and not sv and req.get("instruction"):
+        set_status(f"작업 : 지시 {short(req.get('instruction'), 40)}")
+        return
+    if not work and not ver and not ask and not sv:
+        out.append("멈춤: 고른 노드에 작업 · 검증 · 질문 노드 없음(답한 설문 노드도 없음) — 노드를 만들지 말고 유저에게 무엇을 할지 묻고 턴을 끝낸다")
         set_status("확인 : 마법봉 — 작업 · 검증 · 질문 노드 없음 · 유저 확인 대기")
         return
     if work:
@@ -163,6 +210,14 @@ def show_main(req, out):
     if ask:
         out.append(f"질문 할 일: {' · '.join(ask)} — 놀고 있는 서브에게 답을 시킨다"
                    "(flowtree.py --role 2nd answer-start <id> → answer <id> --short '결론(60자)' '본문')")
+    for i in sv:
+        par = nodes[i].get("parent")
+        out.append(f"설문 할 일: {i} — 유저가 답한 설문(결정) · hand_off 에 반영 → python3 devview/flowtree/flowtree.py --role main survey-ack {i} '무엇을 했나'"
+                   + (f" → 그 설문이 붙은 작업 {par} 시작(위 «할 일» 과 같이 start → 구현 서브)" if par else " → 이어진 작업 시작")
+                   + " · 맨 앞 설문(«이 범위로 시작» 등)은 카드 P(bookkit/cards/P.md 지휘) 대로 범위 승인")
+    if not work and sv:
+        set_status(f"작업 : 설문 {' · '.join(sv)[:40]} 결정 반영")
+        return
     if not work:
         set_status(f"확인 : 마법봉 {' · '.join(ver + ask)[:60]}")
         return
@@ -179,6 +234,8 @@ def show_2nd(req, out, rid):
     t = req.get("target") or {}
     kind = t.get("kind")
     out.append(f"질문: {req.get('question')}")
+    if req.get("instruction") and req.get("instruction") != req.get("question"):
+        out.append(f"지시: {req['instruction']} — 이 지시대로 답한다(답 자리는 아래 그대로)")
     cmd = f"python3 ~/.codex/skills/codex-hub/magic.py"
     if kind == "node":
         store, ftcli, tp = flowtree(req)
@@ -189,9 +246,17 @@ def show_2nd(req, out, rid):
         now = time.time()
         if q not in nodes:
             raise MagicError(f"질문 노드 없음: {q}")
-        if store.status(nodes[q], nodes, now)["status"] == "todo":
+        if nodes[q].get("kind") == "survey":
+            # 설문 노드 — 질문 = 메모(또는 입력창 글) · 답은 그 설문 노드 «질문 · 답» 칸(유저 답 votes 는 그대로)
+            out.append(f"설문 노드 {q} ‹{short(store.eff(nodes[q], 'title'), 60)}› — 이 설문에 대한 질문(답 = 설문 노드 안 «질문 · 답»)")
+            out.extend(ftcli.show_lines(tree, q, now))
+        elif store.status(nodes[q], nodes, now)["status"] == "todo":
             store.apply(tp, "2nd", "answer-start", question=q)
             out.append(f"{q} 답변 준비 중")
+        # 앞 답(이미 답이 달린 노드에 다시 물음) — 이어서 답하도록
+        for i, a in enumerate(nodes[q].get("answers") or [], 1):
+            out.append(f"앞 답 {i} ({a.get('at', '')[5:16]}): {a.get('short', '')}" + (f" — {short(a.get('text'), 300)}" if a.get("text") else "")
+                       + (f"  (물은 글: {short(a.get('q'), 120)})" if a.get("q") else ""))
         for x in t.get("targets") or []:
             out.append(ftcli.ctx_line(x, nodes, now))
         if not t.get("targets"):
@@ -226,6 +291,10 @@ def show_2nd(req, out, rid):
             out.append(f"답 자리: note 꼬리 {t['thread']} → {cmd} answer-note {rid} '답(근거 칸 · 계약 id)'")
         else:
             out.append(f"답 자리: note → {cmd} answer-note {rid} '답(근거 칸 · 계약 id)' --title '짧은 제목(20자 안팎 · 책 아래 질문 줄 행 이름)'")
+    elif kind == "chat":
+        # 지시 붙은 2ND · 그래프 밖 · 대상 없음 — 노드 · 파일에 쓰지 않음
+        out.append(f"대상 없음(보기 {req.get('view') or '-'})")
+        out.append("답 자리 없음 — 대화로 답(노드 · 파일에 쓰지 않는다 · answer-* 명령 없음)")
     else:
         raise MagicError(f"답 자리 모름: {kind}")
     set_status(f"답변 : {short(req.get('question'), 50)}")
@@ -589,7 +658,10 @@ def run(a):
         raise MagicError(f"이 요청의 답 자리는 {kind} — answer-{kind} 로")
     if a.cmd == "answer-node":
         store, _, tp = flowtree(req)
-        return store.apply(tp, "2nd", "answer", question=req["target"]["question"], short=a.short, text=a.body)["msg"]
+        t = req["target"]
+        # 설문 노드 답 자리 — 물은 글(메모 · 입력창 글)도 같이 남김
+        extra = {"ask": t.get("ask") or req.get("question") or ""} if t.get("own") == "survey" else {}
+        return store.apply(tp, "2nd", "answer", question=t["question"], short=a.short, text=a.body, **extra)["msg"]
     if not a.answer.strip():
         raise MagicError("답 없음")
     if a.cmd == "answer-md":

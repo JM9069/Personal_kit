@@ -269,9 +269,9 @@ bRail.addEventListener('click',()=>setRail(document.body.classList.contains('nor
   const own=el=>{const t=el&&el.closest&&el.closest('.note,.qr');return t&&(t._n||t.classList.contains('qr'))?t:null;};
   const idOf=t=>t._n?t._n.id:t.dataset.id;
   let pick=null;  // 마지막으로 누른 메모 · 질문 줄의 id
-  addEventListener('pointerdown',e=>{const t=own(e.target);if(t)pick=idOf(t);},true);
-  // devview 단축키 — 마법봉 Alt+Q · W · Book Alt+B · 그래프 화면 Alt+` · 0~8 은 devview 로 넘김 / 기호 Alt+Z · X · C · V 는 이 책의 입력 칸에 넣음
-  const HOT=['KeyQ','KeyW','KeyB','Backquote','Digit0','Digit1','Digit2','Digit3','Digit4','Digit5','Digit6','Digit7','Digit8'];
+  addEventListener('pointerdown',e=>{const t=own(e.target);if(t){pick=idOf(t);window.parent.postMessage({book:'pick',id:pick},'*');}},true);
+  // devview 단축키 — 마법봉 Alt+Q · W · 지시 붙은 마법봉 Alt+E · R(고른 메모는 {book:'pick'} 으로 미리 알림) · Book Alt+B · 그래프 화면 Alt+` · 0~8 은 devview 로 넘김 / 기호 Alt+Z · X · C · V 는 이 책의 입력 칸에 넣음
+  const HOT=['KeyQ','KeyW','KeyE','KeyR','KeyB','Backquote','Digit0','Digit1','Digit2','Digit3','Digit4','Digit5','Digit6','Digit7','Digit8'];
   const SYM={KeyZ:'❇️',KeyX:'🔎',KeyC:'💭',KeyV:'📌'};
   addEventListener('keydown',e=>{
     if(!e.altKey||e.ctrlKey||e.metaKey||e.shiftKey||e.isComposing)return;

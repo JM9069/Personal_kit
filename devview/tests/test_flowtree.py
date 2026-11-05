@@ -290,8 +290,9 @@ def test_ui(base, adr_line, note_line):
         page.evaluate("window.devview.editor().focus()")
         main_py0 = page.evaluate("window.devview.editor().getValue()")
         page.keyboard.press("Alt+q")
-        check("편집기 안 Alt+Q → 고른 노드로 MAIN 마법봉 요청 · 보기 그대로", sent(2) and magic[1]["nick"] == "main"
-              and [n["id"] for n in magic[1]["selection"]["nodes"]] == ["f-data"] and cur_view(page) == "code", (magic[1:], cur_view(page)))
+        # 유저 결정(11/05): Alt+Q 는 그래프 보기에서만 고른 노드를 보낸다 — 다른 보기에서는 마지막 그래프 선택을 보내지 않고 알림만
+        time.sleep(1)
+        check("편집기 안 Alt+Q → 마법봉 요청 안 감 · 보기 그대로(그래프 보기에서만)", len(magic) == 1 and cur_view(page) == "code", (magic[1:], cur_view(page)))
         check("Alt+Q 가 편집기에 글자를 넣지 않음", page.evaluate("window.devview.editor().getValue()") == main_py0)
         page.unroute("**/api/hub/magic")
         page.evaluate("window.devview.showView('graph')")

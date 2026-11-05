@@ -499,6 +499,24 @@ def test_ui(w, base):
               and "m-err" in row("2nd").get_attribute("class"), [row(n).get_attribute("class") for n in ("main", "aux", "2nd")])
         spin = page.evaluate("getComputedStyle(document.querySelector('#hub .dv-hub-row[data-nick=main]'), '::before').animationName")
         check("빙글 = 회전 애니메이션(::before)", spin == "dv-hub-spin", spin)
+        # 진행 색 — 빙글 노랑(그래프 진행 중 빙글과 같은 #f4d35e) · 턴 끝 점멸 녹색 · 오류 빨강
+        hs = page.evaluate("Object.fromEntries(['main', 'aux', '2nd'].map((n) => { const r = document.querySelector(`#hub .dv-hub-row[data-nick=\"${n}\"]`);"
+                           " return [n, [getComputedStyle(r).getPropertyValue('--hs').trim(), getComputedStyle(r, '::before').backgroundImage]]; }))")
+        check("진행 색 — 빙글 노랑 #f4d35e(::before 그라디언트 rgb(244, 211, 94)) · 점멸 녹색 #5fcf73 · 오류 #ff5c5c",
+              hs["main"][0] == "#f4d35e" and "rgb(244, 211, 94)" in hs["main"][1] and hs["aux"][0] == "#5fcf73" and hs["2nd"][0] == "#ff5c5c", hs)
+        page.evaluate("document.querySelector('#hub .dv-hub-rows').scrollTop = 0")
+        time.sleep(0.3)
+        page.locator("#hub").screenshot(path=str(SHOTS / "hub_spin_colors.png"))
+        # 캡처에서 MAIN 행 둘레에 노랑 화소가 실제로 그려졌나(::before 회전 테두리)
+        rb = row("main").bounding_box()
+        hb = page.locator("#hub").bounding_box()
+        from PIL import Image
+        im = Image.open(SHOTS / "hub_spin_colors.png").convert("RGB")
+        x0, y0 = int(rb["x"] - hb["x"]) - 2, int(rb["y"] - hb["y"]) - 2
+        px = [im.getpixel((x, y)) for x in range(max(0, x0), min(im.width, x0 + int(rb["width"]) + 4))
+              for y in range(max(0, y0), min(im.height, y0 + int(rb["height"]) + 4))]
+        yellow = sum(1 for r, g, b in px if r > 200 and g > 170 and b < 140)
+        check("캡처 — MAIN 행 둘레에 노랑 빙글 화소 보임", yellow > 20, yellow)
         # 즉시 툴팁
         st = row("main").locator(".dv-hub-st")
         b = st.bounding_box()

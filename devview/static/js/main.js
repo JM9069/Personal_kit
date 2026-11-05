@@ -8,10 +8,10 @@ import { initTree, load as loadTree, reveal } from './tree.js';
 import { initSearch, quickOpen, recentFiles, findInFiles, structure, showHelp } from './search.js';
 import { initGit, gitSelection } from './git.js';
 import { popupOpen } from './popup.js';
-import { initFlow, flowLayout, focusFlow, flowState, flowSelection, flowPost } from './flow.js';
-import { initHub, hubDebug, hubWand } from './hub.js';
+import { initFlow, flowLayout, focusFlow, flowState, flowSelection, flowPost, flushFlow } from './flow.js';
+import { initHub, hubDebug, hubWand, hubWandNote } from './hub.js';
 import { initChat, chatDebug } from './chat.js';
-import { initBook, bookDebug, bookWand } from './book.js';
+import { initBook, bookDebug, bookWand, bookSel } from './book.js';
 import { initNotify, notifyDebug } from './notify.js';
 
 // Monaco 0.52 내부 비동기 경쟁 두 가지 — 다음 그리기에서 저절로 맞춰지는 무해한 거부라 이 둘만 조용히 처리
@@ -74,7 +74,7 @@ async function boot() {
   initApp();
   initPalette();
   // 코덱스 허브(모든 보기 좌하단 · 대화 보기 제외) · 대화 보기 — 서버에 codex_hub.py 가 있을 때만
-  initHub(info, { view: () => view, codeSel: selectionInfo, markCode: markRange, clearMark, gitSel: gitSelection, ftSel: flowSelection });
+  initHub(info, { view: () => view, codeSel: selectionInfo, markCode: markRange, clearMark, gitSel: gitSelection, ftSel: flowSelection, bookSel, flush: flushFlow });
   initChat(info, { view: () => view });
   initBook(info);
   // 알림 종(모든 보기 좌하단 · 끌어서 옮김) — 서버에 notify.py 가 있을 때만
@@ -233,8 +233,8 @@ function watchFocus(doc) {
     // iframe(그래프 · 설문 · 앱) 안 Esc 도 허브에 알림 — 행 선택 해제(그쪽 Esc 동작은 그대로)
     if (e.key === 'Escape' && doc !== document) emit('escape');
     if (e.key === 'Escape' && !$('#palette').hidden) { e.preventDefault(); e.stopPropagation(); togglePalette(false); return; }
-    // Book(Alt+B) · 마법봉(WAND_KEYS) — 키 자리라 한글 입력 중에도 같음 · 그래프 · 설문 iframe 안에서도(책 안은 book.js 가 넘김)
-    if (e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey && (e.code === 'KeyB' || WAND_KEYS[e.code])) {
+    // Book(Alt+B) · 마법봉(WAND_KEYS) · 지시 붙은 마법봉(NOTE_KEYS) — 키 자리라 한글 입력 중에도 같음 · 그래프 · 설문 iframe 안에서도(책 안은 book.js 가 넘김)
+    if (e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey && (e.code === 'KeyB' || WAND_KEYS[e.code] || NOTE_KEYS[e.code])) {
       e.preventDefault(); e.stopPropagation();
       hotKey(e.code);
       return;
@@ -287,6 +287,8 @@ function watchFocus(doc) {
 }
 // 마법봉 단축키 — 키 자리 → 허브 역할. 그 화면의 선택으로 마법봉 단추를 누른 것과 같다
 const WAND_KEYS = { KeyQ: 'main', KeyW: '2nd' };
+// 지시 붙은 마법봉 단축키 — 대상은 Q · W 와 같고 허브 입력창으로 지시 글을 붙여 보냄(자동 전송 없음)
+const NOTE_KEYS = { KeyE: 'main', KeyR: '2nd' };
 // 그래프 화면 단축키 — 키 자리 → flowtree 화면(null = Main · 0~8 = 섹션)
 const SCREEN_KEYS = { Backquote: null, Digit0: 0, Digit1: 1, Digit2: 2, Digit3: 3, Digit4: 4, Digit5: 5, Digit6: 6, Digit7: 7, Digit8: 8 };
 // 보기 · 마법봉 단축키 실행 — 이 문서 키 처리와 책 iframe(hot-key)이 같이 씀
@@ -299,6 +301,7 @@ function hotKey(code) {
     flowPost({ ft: 'screen', screen: SCREEN_KEYS[code] });
     return;
   }
+  if (NOTE_KEYS[code]) { hubWandNote(NOTE_KEYS[code]); return; }
   const role = WAND_KEYS[code];
   if (role) {
     if (role === '2nd' && view === 'book') bookWand(); else hubWand(role);

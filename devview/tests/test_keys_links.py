@@ -236,11 +236,11 @@ def main():
             with pg.expect_response(lambda r: r.url.endswith("/magic"), timeout=8000) as res:
                 pg.keyboard.press("Alt+KeyW")
             check(res.value.status == 409, "포커스가 책 밖이어도 Alt+W → 책의 고른 메모로 요청(이미 보냄 409)", res.value.status)
-            # 책 안 Alt+Q — 고른 노드 없음
+            # 책 안 Alt+Q — MAIN 마법봉은 그래프 보기에서만(2026-11-05 유저 결정) → 알림 · 보내지 않음
             n0 = len(queued())
             fr.locator(".note").last.locator(".nh .nt").click()
             pg.keyboard.press("Alt+KeyQ")
-            check(wait_for(lambda: "노드를 고르지 않음" in pg.inner_text("#toasts")) and len(queued()) == n0 and pg.evaluate("window.devview.view()") == "book",
+            check(wait_for(lambda: "그래프 보기에서" in pg.inner_text("#toasts")) and len(queued()) == n0 and pg.evaluate("window.devview.view()") == "book",
                   "고른 노드 없이 책 안 Alt+Q → 알림 · 보내지 않음 · 보기 그대로", (queued()[n0:], pg.evaluate("window.devview.view()")))
             # 그래프에서 노드를 고르고 책으로 돌아옴
             pg.evaluate("window.devview.showView('graph')")
@@ -259,10 +259,10 @@ def main():
             pg.evaluate("window.devview.showView('book')")
             fr.locator(".note").last.locator(".nh .nt").click()
             pg.keyboard.press("Alt+KeyQ")
-            ok = wait_for(lambda: len(queued()) == n0 + 1 and "$main-magic" in queued()[-1][-1])
-            rid = queued()[-1][-1].split()[-1] if ok else ""
-            req = json.loads((root / ".codex-hub" / "requests" / f"{rid}.json").read_text(encoding="utf-8")) if ok else {}
-            check(ok and [n["id"] for n in req.get("nodes", [])] == ["s1-t1"], "책 안 Alt+Q → 고른 노드로 MAIN 마법봉 queue", (queued()[-1:], req))
+            # 그래프에서 고른 노드가 있어도 책 안 Alt+Q 는 보내지 않음(마지막 그래프 선택을 다른 보기에서 보내지 않음)
+            pg.wait_for_timeout(1200)
+            check(len(queued()) == n0 and "그래프 보기에서" in pg.inner_text("#toasts"),
+                  "그래프 선택이 남아 있어도 책 안 Alt+Q → 보내지 않음 · 알림", queued()[n0:])
             check(pg.evaluate("window.devview.view()") == "book", "책 안 Alt+Q → 보기 그대로", pg.evaluate("window.devview.view()"))
             check(not errs, "페이지 오류 없음", errs[:3])
             br.close()

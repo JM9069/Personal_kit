@@ -26,6 +26,8 @@ check = hub.check
 wait_for = hub.wait_for
 # 단추로 만든 노드 제목(다음 노드는 옆자리에)
 MADE = []
+# Main 섬 질문 id
+ISLAND = []
 
 
 # 시험 재료 더하기 — 섹션 1 작업 t2 · 칸 없는 아래 작업 t3 · 검증 v2 · 설문 s1 · 질문 q1 · 파일 노드 f-sec(섹션 1) · t1 밑 v1 은 칸 없음
@@ -38,6 +40,8 @@ def seed(tp):
     fs.apply(tp, "main", "verify-add", target="t2", what="섹션 검증")
     fs.apply(tp, "main", "survey-add", target="t2", question="섹션 설문", options=["가", "나"])
     fs.apply(tp, "user", "ask", text="섹션 질문", target="t2")
+    # Main 에서 만든 섬 질문(섹션 · 대상 없음) — Main 에 보이고 섹션0 에는 안 보임(유저 지정 11/05)
+    ISLAND.append(fs.apply(tp, "user", "ask", text="Main 섬 질문")["id"])
     # 파일 노드(쓰기 명령이 없어 시험 재료로 직접)
     tree = json.loads(tp.read_text(encoding="utf-8"))
     tree["nodes"].append({"id": "f-sec", "kind": "file", "title": "data.csv", "path": "data.csv", "screen": 1})
@@ -202,6 +206,7 @@ def run(w, base):
         ids = shown(fr)
         check("Main — 작업 · 파일 · 옛 노드 보임", {"t1", "t2", "t3", "f-sec", "root", "r-one"} <= ids, sorted(ids)[:30])
         check("Main — 질문 · 설문 · 검증 안 보임", not ids & {"v1", "v2", "s1", "q1"}, ids & {"v1", "v2", "s1", "q1"})
+        check("Main — 섹션 없는 섬 질문은 Main 에 보임", ISLAND[0] in ids, (ISLAND, sorted(ids)[:30]))
         check("Main — 숨은 노드의 선 안 그림", not [e for e in edges(fr) if "v2" in e or "s1" in e or "q1" in e], sorted(edges(fr)))
         check("Main — 빈 틀 안 보임", not (ids - real(fr)), sorted(ids - real(fr))[:5])
         page.screenshot(path=str(SHOTS / "ft_screens_main.png"))
@@ -214,7 +219,7 @@ def run(w, base):
         check("섹션1 — 이 화면 안 선은 그림", {"h:t2>t3", "h:t2>v2"} <= edges(fr), sorted(edges(fr)))
         page.screenshot(path=str(SHOTS / "ft_screens_section1.png"))
         go(fr, 0, "v1")
-        check("칸 없는 검증(칸 없는 대상) → 섹션0 에 보임", real(fr) == {"v1"}, sorted(real(fr)))
+        check("칸 없는 검증(칸 없는 대상) → 섹션0 에 보임 · 섬 질문은 섹션0 에 안 겹침", real(fr) == {"v1"}, sorted(real(fr)))
         check("섹션0 — 안 보이는 대상의 선 안 그림", not [e for e in edges(fr) if "v1" in e and "s0" not in e], sorted(edges(fr))[:6])
         go(fr, 5, "s5-t1")
         check("빈 섹션 — 틀만", not real(fr), sorted(real(fr)))
@@ -708,6 +713,40 @@ def run(w, base):
             fr.locator(".flow").press("Escape")
         fr.evaluate("window.__flowtree.zoomTo(0.5)")
         time.sleep(0.4)
+
+        # ======= 진행 색 — 착수 · 검증 중 · 답변 준비 중 = 노랑 빙글 · 5분 넘음 = 주황 빙글 · 완료 = 녹색 =======
+        import flowtree_store as fs  # noqa: E402
+        mk = lambda title: fs.apply(tp, "main", "add", parent="-", title=title, summary="진행 색", section=1)["id"]  # noqa: E731
+        c_doing, c_late, c_done = mk("진행 작업"), mk("늦은 작업"), mk("끝난 작업")
+        for t in (c_doing, c_late, c_done):
+            fs.apply(tp, "main", "start", task=t)
+        fs.apply(tp, "main", "done", task=c_done)
+        c_ver = fs.apply(tp, "main", "verify-add", target=c_done, what="진행 색 검증", section=1)["id"]
+        fs.apply(tp, "insp", "verify-start", verify=c_ver)
+        c_q = fs.apply(tp, "user", "ask", text="진행 색 질문", target=c_done)["id"]
+        fs.apply(tp, "2nd", "answer-start", question=c_q)
+        # 늦은 작업 — 착수 기록 시각을 7분 전으로(화면이 착수 시각으로 계산)
+        tree = json.loads(tp.read_text(encoding="utf-8"))
+        late_node = next(n for n in tree["nodes"] if n["id"] == c_late)
+        late_node["events"][-1]["ts"] = time.time() - 420
+        tp.write_text(json.dumps(tree, ensure_ascii=False, indent=1), encoding="utf-8")
+        go(fr, "main", "t2")
+        go(fr, 1, c_q)
+        ids = [c_doing, c_late, c_done, c_ver, c_q]
+        wait_for(lambda: fr.evaluate(f"(() => {{ const e = document.querySelector('.react-flow__node[data-id=\"{c_late}\"] .wk'); return !!e && e.dataset.status === 'late'; }})()"), 8)
+        st = fr.evaluate("""(ids) => Object.fromEntries(ids.map((id) => { const e = document.querySelector(`.react-flow__node[data-id="${id}"] .wk`);
+          if (!e) return [id, null]; const s = getComputedStyle(e); return [id, [e.dataset.status, e.classList.contains('m-spin'), s.getPropertyValue('--s').trim(),
+          getComputedStyle(e, '::before').backgroundImage]]; }))""", ids)
+        want = {c_doing: ("doing", True, "#f4d35e"), c_late: ("late", True, "#ff9f43"), c_done: ("done", False, "#5fcf73"),
+                c_ver: ("checking", True, "#f4d35e"), c_q: ("answering", True, "#f4d35e")}
+        for nid, (s0, spin, col) in want.items():
+            g = st.get(nid)
+            check(f"진행 색 — {nid} {s0} = {'빙글' if spin else '점등'} {col}", g and (g[0], g[1], g[2]) == (s0, spin, col), g)
+        check("진행 색 — 빙글 그라디언트 = 노랑 rgb(244, 211, 94) · 늦음 = 주황 rgb(255, 159, 67)(눈으로 구분되는 다른 색)",
+              st[c_doing] and "rgb(244, 211, 94)" in st[c_doing][3] and "rgb(255, 159, 67)" in st[c_late][3], (st[c_doing], st[c_late]))
+        fr.evaluate(f"window.__flowtree.center('{c_late}', 0.9)")
+        time.sleep(0.5)
+        page.screenshot(path=str(SHOTS / "ft_progress_colors.png"))
 
         # ======= 좁은 창 =======
         page.set_viewport_size({"width": 620, "height": 800})

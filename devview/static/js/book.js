@@ -11,6 +11,8 @@ import { pageUrl } from './editor.js';
 let el = {};
 let list = { books: [] };
 let cur = null;
+// 책 안에서 마지막으로 누른 스티커 id(책 iframe 의 {book:'pick'}) — 지시 붙은 마법봉(Alt+E · Alt+R)의 대상
+let pickNote = null;
 // 여는 방식 — 'url' = 같은 주소 /pg/ 로 iframe 이동(기본) · 'doc' = 책 글을 받아 srcdoc 에 넣음(주소 이동이 막힌 브라우저 보험)
 let mode = 'url';
 
@@ -56,9 +58,10 @@ export function initBook(info) {
   box.classList.toggle('no-side', store.get('book.side', '1') === '0');
   // 책 안 Alt+Q · W · B → {book:'key', code} — 다른 출처라 iframe 안 키를 main.js 가 직접 못 받는다
   window.addEventListener('message', (e) => {
-    if (e.source !== el.frame.contentWindow || !['toggle-list', 'key'].includes(e.data?.book)) return;
+    if (e.source !== el.frame.contentWindow || !['toggle-list', 'key', 'pick'].includes(e.data?.book)) return;
     if (e.origin !== location.origin) return;   // 책은 같은 주소의 /pg/ 아래(2026-11-05 — 다른 포트는 대회 브라우저에서 막힘)
     if (e.data.book === 'key') { emit('hot-key', String(e.data.code)); return; }
+    if (e.data.book === 'pick') { pickNote = e.data.id ? { note: String(e.data.id), doc: cur } : null; return; }
     const hide = !box.classList.contains('no-side');
     box.classList.toggle('no-side', hide);
     store.set('book.side', hide ? '0' : '1');
@@ -158,6 +161,11 @@ export async function bookOpen(t, hash = '') {
 // 2ND 마법봉 단축키 — 책 안에서 고른 메모의 🪄 를 누르게 함
 export function bookWand() {
   el.frame?.contentWindow?.postMessage({ book: 'wand' }, '*');
+}
+
+// 지시 붙은 마법봉 대상 — 지금 책에서 고른 스티커 {note, doc} 또는 {}
+export function bookSel() {
+  return pickNote && pickNote.doc === cur ? { ...pickNote } : {};
 }
 
 // 시험 · 디버깅용

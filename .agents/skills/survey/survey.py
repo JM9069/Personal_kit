@@ -246,7 +246,15 @@ function saveDraft(){clearTimeout(dt);if(!fm||!unsaved)return;unsaved=false;
   body:new URLSearchParams(new FormData(fm))}).catch(function(){});}
 if(fm){['input','change'].forEach(function(ev){fm.addEventListener(ev,function(){dirty=true;unsaved=true;
   clearTimeout(dt);dt=setTimeout(saveDraft,400);});});
- fm.addEventListener('submit',function(){clearTimeout(dt);unsaved=false;});
+ fm.addEventListener('submit',function(e){
+  // «질문» 을 고르고 메모(질문 글)를 비운 문항 — 제출 막고 이유 표시(서버도 400)
+  var sb=e.submitter;if(!(sb&&sb.value==='cancel')){var bad=[];
+   fm.querySelectorAll('input[type=radio]:checked').forEach(function(r){if(r.value!=='질문')return;
+    var m=fm.querySelector('textarea[name="'+r.name+'_memo"]');if(!m||!m.value.trim())bad.push(r.name.slice(1));});
+   if(bad.length){e.preventDefault();e.stopImmediatePropagation();var w=document.getElementById('askErr');
+    if(!w){w=document.createElement('div');w.id='askErr';w.className='rt fail';(fm.querySelector('.bar')||fm).prepend(w);}
+    w.textContent='질문을 고른 문항에 질문 글(메모)이 비었음 — '+bad.join(' · ')+'번';return;}}
+  clearTimeout(dt);unsaved=false;});
  addEventListener('pagehide',saveDraft);}
 function tell(m){if(inFrame)try{parent.postMessage(m,'*');}catch(e){}}
 function poll(){
@@ -1154,6 +1162,10 @@ def submit(q: dict, body: bytes, up: str) -> tuple:
         res = {**head, "action": "cancel", "answers": [], "extra": ""}
     else:
         res = {**head, **collect(item["questions"], form, item.get("mode", "survey"))}
+        # «질문» 을 골랐는데 질문 글(메모)이 빈 문항 — 빈 질문을 보내지 않음(화면도 막지만 서버에서도)
+        empty = [str(i) for i, a in enumerate(res.get("answers") or [], 1) if a.get("kind") == "ask" and not str(a.get("text") or "").strip()]
+        if empty:
+            return reply(400, msg_page(f"질문을 고른 문항에 질문 글(메모)이 비었음 — {' · '.join(empty)}번"))
     # 결과 파일을 먼저 씀 — 받은 세션이 바로 result 를 부름
     write_json(result_file(folder, sid), res)
     draft_file(folder, sid).unlink(missing_ok=True)
